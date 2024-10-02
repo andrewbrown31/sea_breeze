@@ -2,7 +2,7 @@ import numpy as np
 import xarray as xr
 import tqdm
 import scipy
-from skimage.segmentation import find_boundaries, flood
+from skimage.segmentation import find_boundaries, flood, expand_labels
 import skimage.measure as measure
 import skimage.morphology as morphology
 
@@ -36,7 +36,42 @@ def get_coastline(lsm):
 
     return lsm_ds
 
-def get_coastline_angle_sorting(lsm,N=10,size_thresh=10):
+def get_coastline_angle_circle(label, lsm):
+
+    '''
+    Ewan's method. Construct a "kernel" for each coastline point based on the anlgle between that point and all other points in the domain, then average..
+
+    Input
+    label: a labelled coastline array
+    lsm: xarray dataarray with a binary lsm, and lat lon info
+
+    Output
+    an array of coastline angles (0-360 degrees from N) for the labelled coasline array
+    '''
+
+    lon = lsm.lon.values
+    lat = lsm.lat.values
+    xx,yy = np.meshgrid(lon,lat)
+
+    xl, yl = np.where(label)
+
+    angle_ls = []
+    for t in tqdm.tqdm(np.arange(len(xl))):
+        angles = np.zeros(label.shape) * np.nan
+        for i in range(xx.shape[0]):
+            for j in range(xx.shape[1]):
+                angles[i,j] = np.arctan2(
+                    xx[i,j] - xx[xl[t],yl[t]],
+                    yy[i,j] - yy[xl[t],yl[t]])
+        
+        angles = np.rad2deg(angles)
+        angles = (angles-90) % 360
+
+        angle_ls.append(angles)
+
+    return np.where(label,scipy.stats.circmean(np.stack(angle_ls), axis=0, high=360, low=0),np.nan)
+
+def get_coastline_angle_sorting(lsm,N=10,size_thresh=10,erosion_footprint=morphology.disk(2)):
 
     '''
     For a land sea mask Dataarray, find the angle of each coastline.
@@ -47,7 +82,7 @@ def get_coastline_angle_sorting(lsm,N=10,size_thresh=10):
 
     Input
     lsm: xarray dataarray with a binary lsm, and lat lon info
-    N: how many pixels away to average the coastline angle (uses N-2 points)
+    N: how many pixels away (both sides) to average the coastline angle (uses (N-1)*2 points)
     size_thresh: labelled land masses with less pixels than this (after erosion) are removed
 
     Output
@@ -56,7 +91,7 @@ def get_coastline_angle_sorting(lsm,N=10,size_thresh=10):
 
     #Get coastline and labelled landmass masks using skimage
     coastline_masks, label_masks = label_and_find_coast(lsm, 
-                                                        erosion_footprint=morphology.disk(2),
+                                                        erosion_footprint=erosion_footprint,
                                                         size_thresh=size_thresh)
     lon = lsm.lon.values
     lat = lsm.lat.values
@@ -66,11 +101,9 @@ def get_coastline_angle_sorting(lsm,N=10,size_thresh=10):
         coastline_masks, label_masks)
 
     #Loop over each labelled land mass in the dictionary, and find angles
-    #NOTE currently just finding the angle between every point and fifth-most next point.
-    #Would rather take the circular average of points 2-N
     labels = list(label_masks.keys())
     angles = np.zeros(lsm.shape) * np.nan
-    next_inds = np.arange(2,N)
+    next_inds = np.concatenate((np.arange(-N,-1), np.arange(2,N+1)))
     for l in labels:
         bound_xind = bound_xind_ls[l]
         bound_yind = bound_yind_ls[l]
@@ -78,12 +111,21 @@ def get_coastline_angle_sorting(lsm,N=10,size_thresh=10):
         for ind in range(len(sorted_inds)):
             temp_angles = []
             for n in next_inds:
-                temp_angles.append(np.arctan2(
-                    lat[bound_xind[sorted_inds[(ind+n) % len(sorted_inds)]]] - 
-                        lat[bound_xind[sorted_inds[ind]]],
-                    lon[bound_yind[sorted_inds[(ind+n) % len(sorted_inds)]]] - 
-                        lon[bound_yind[sorted_inds[ind]]])
-                )
+                if n > 0:
+                    temp_angles.append(np.arctan2(
+                        lat[bound_xind[sorted_inds[(ind+n) % len(sorted_inds)]]] - 
+                            lat[bound_xind[sorted_inds[ind]]],
+                        lon[bound_yind[sorted_inds[(ind+n) % len(sorted_inds)]]] - 
+                            lon[bound_yind[sorted_inds[ind]]])
+                    )
+                else:
+                    temp_angles.append(np.arctan2(
+                        lat[bound_xind[sorted_inds[ind]]] - 
+                            lat[bound_xind[sorted_inds[(ind+n)]]],
+                        lon[bound_yind[sorted_inds[ind]]] - 
+                            lon[bound_yind[sorted_inds[(ind+n)]]]
+                            )
+                    )
 
             angles[bound_xind[sorted_inds[ind]], 
                 bound_yind[sorted_inds[ind]]] = scipy.stats.circmean(
@@ -94,7 +136,7 @@ def get_coastline_angle_sorting(lsm,N=10,size_thresh=10):
 
     return angles
 
-def expand_coasline_angles(lsm,angles,R=300,N=10):
+def expand_coastline_angles(lsm,angles,R=300,N=10,dx=12):
 
     '''
     From an array of coastline angles, expand the angles out to nearby points, by taking an average of either neighbouring points in a radius, or all points in a radius
@@ -103,7 +145,9 @@ def expand_coasline_angles(lsm,angles,R=300,N=10):
     lsm: a dataarray with a binary land sea mask and lat lon info
     angles: a numpy array of coastline angles ranging from 0-360 degrees (from N)
     R: Radius to expand coastline
-    N: number of nearest points to average when expanding the coastal angles (int) by radius R. If None, use all points in radius
+    N: number of nearest points to average when expanding the coastal angles (int) by radius R. If None, use all points in radius. If N=1 then the function is very quick, compared
+       with if N>1 where it is a nested loop of all points
+    dx: the grid spacing of the data in km. Used only if N=1 or N=None
     
     Output
     data_out: xarray dataset with the land sea mask, coastline angles, and expanded coastline angles
@@ -121,31 +165,74 @@ def expand_coasline_angles(lsm,angles,R=300,N=10):
         flattened_angles = angles.flatten()
     else:
         print("Expanding angles to average of points within "+str(R)+" kms...")
-    for xi in tqdm.tqdm(range(angles.shape[0])):
-        for yi in range(angles.shape[1]):
-            dist = latlon_dist(yy[xi,yi], xx[xi,yi], yy, xx)
-            if ((~np.isnan(angles)) & (dist<=R)).sum() > 0:
-                if N is not None:
-                    #If N is an integer, then points are assigned a coastline angle using
-                    #the average of the N closest coastline points within R km
-                    closest_coast_angle[xi,yi] = np.rad2deg(
-                        scipy.stats.circmean(
-                        np.deg2rad(
-                            flattened_angles[
-                                np.argsort(xr.where((~np.isnan(angles)) & (dist<=R),dist,np.nan),axis=None)[0:N]
-                                ]), 
-                        high=2*np.pi, low=0, nan_policy="omit"))
-                else:
-                    #If N is set to None, a radius of R km is used to define the coastline
-                    #angle for each point
-                    closest_coast_angle[xi,yi] = np.rad2deg(
-                        scipy.stats.circmean(
-                        np.deg2rad(
-                            xr.where((~np.isnan(angles)) & (dist<=R),lsm_ds.angles,np.nan)
-                            ), 
-                        high=2*np.pi, low=0, nan_policy="omit"))
-            else:
-                closest_coast_angle[xi,yi] = np.nan
+
+    if N == 1:
+        #Do a nearest neighbour interpolation
+        expanded_coast = expand_labels(~np.isnan(angles), distance=np.round(R/dx))
+        xa, ya = np.where(~np.isnan(angles))
+        points = (xx[xa,ya],yy[xa,ya])
+        values = angles[xa,ya]
+        xi = (xx.flatten(), yy.flatten())
+        closest_coast_angle = np.where(
+            expanded_coast,scipy.interpolate.griddata(
+                points, values, xi, method="nearest").reshape(xx.shape),
+                np.nan)
+
+    elif N is None:
+        #If N is set to None, a radius of R km is used to define the coastline
+        #angle for each point
+        for xi in tqdm.tqdm(range(angles.shape[0])):
+            for yi in range(angles.shape[1]):
+                expanded_coast = np.zeros(xx.shape)
+                expanded_coast[xi,yi] = 1
+                expanded_coast = expand_labels(expanded_coast, distance=np.round(R/dx))
+                closest_coast_angle[xi,yi] = np.rad2deg(
+                    scipy.stats.circmean(
+                    np.deg2rad(
+                        xr.where((~np.isnan(angles)) & (expanded_coast.astype(bool)),angles,np.nan)
+                        ), 
+                    high=2*np.pi, low=0, nan_policy="omit"))
+
+    else:
+        #If N is not None and not 1, then we are getting the closest N points, and need to calculate
+        #acual distances
+        # for xi in tqdm.tqdm(range(angles.shape[0])):
+        #     for yi in range(angles.shape[1]):
+        #         dist = latlon_dist(yy[xi,yi], xx[xi,yi], yy, xx)
+        #         if ((~np.isnan(angles)) & (dist<=R)).sum() > 0:
+        #             #If N is an integer, then points are assigned a coastline angle using
+        #             #the average of the N closest coastline points within R km
+        #             closest_coast_angle[xi,yi] = np.rad2deg(
+        #                 scipy.stats.circmean(
+        #                 np.deg2rad(
+        #                     flattened_angles[
+        #                         np.argsort(xr.where((~np.isnan(angles)) & (dist<=R),dist,np.nan),axis=None)[0:N]
+        #                         ]), 
+        #                 high=2*np.pi, low=0, nan_policy="omit"))                        
+        #         else:
+        #             closest_coast_angle[xi,yi] = np.nan
+
+        #TODO Replace with scipy kdtree
+
+        anglesx, anglesy = np.where(~np.isnan(angles))
+        angles_lat = lat[anglesx]
+        angles_lon = lon[anglesy]
+
+        X = np.array([angles_lat, angles_lon]).T
+        kdt = scipy.spatial.KDTree(X)
+
+        _,ind = kdt.query(np.array([yy.flatten(),xx.flatten()]).T, N)
+
+        closest_coast_angle = np.array(
+            [scipy.stats.circmean(
+            np.deg2rad(
+                angles[ anglesx[ind[i]], anglesy[ind[i]] ])
+            ,high=2*np.pi,low=0
+            ) for i in tqdm.tqdm(range(ind.shape[0]))]).reshape(xx.shape)
+
+        expanded_coast = expand_labels(~np.isnan(angles), distance=np.round(R/dx))
+        closest_coast_angle = np.rad2deg(
+            np.where(expanded_coast,closest_coast_angle,np.nan))
 
     data_out = xr.Dataset({"lsm":lsm,
             "coast_angle_expand":(("lat","lon"),closest_coast_angle),
@@ -173,7 +260,10 @@ def label_and_find_coast(lsm,erosion_footprint=morphology.disk(2),size_thresh=10
     #Label the binary land sea mask, while applying an erosion method to remove
     #parts of the coast connected by skinny land bridges (the algorithm for ordering 
     #the coastline points has trouble with that)
-    labelled_lsm = measure.label(morphology.erosion(lsm,footprint=erosion_footprint),connectivity=1)
+    if erosion_footprint is not None:
+        labelled_lsm = measure.label(morphology.binary_opening(lsm,footprint=erosion_footprint),connectivity=1)
+    else:
+        labelled_lsm = measure.label(lsm,connectivity=1)
 
     #Remove labelled land masses smaller than some size threshold
     unique_labels = np.unique(labelled_lsm)
@@ -250,7 +340,9 @@ def order_coastline_points(coastline_masks, label_masks):
             
             #If this neighbouring point is a boundary (coastline)
             if (np.max([n[0] for n in neighbours]) >= coastline_masks[l].shape[0])\
-                | (np.max([n[1] for n in neighbours]) >= coastline_masks[l].shape[1]):
+                | (np.max([n[1] for n in neighbours]) >= coastline_masks[l].shape[1])\
+                    | (np.any([n[0]<0 for n in neighbours]))\
+                        | (np.any([n[1]<0 for n in neighbours])):
                 neighbours_outside=True
                 drop_labels.append(l)
                 print("Dropping land mass "+str(l)+" for intersecting boundary")
@@ -269,8 +361,6 @@ def order_coastline_points(coastline_masks, label_masks):
             det_ls = []
 
             #Loop over all neighbouring points
-            #NOTE NEED TO FIX THIS FOR CASES THAT INTERSECT WITH THE BOUNDARY. EITHER BY NOT LOOKING FOR THOSE
-            #NEIGHBOURING POINTS, OR BY PADDING THE DOMAIN WITH ZEROS, THEN GETTING RID OF THE PAD LATER
             for b in neighbours:
                 if coastline_masks[l][b[0],b[1]]:
                     #Check if the point has already been sorted
@@ -279,6 +369,7 @@ def order_coastline_points(coastline_masks, label_masks):
                     #Otherwise, calculate the vector dot product to figure out which neighbout is most to the left of the current point
                     else:
                         det_ls.append((a_x - centre_xind) * (b[1] - centre_yind) - (b[0] - centre_xind) * (a_y - centre_yind))
+                        #det_ls.append(np.sqrt((b[0] - centre_xind)**2 + (b[1] - centre_yind)**2))
                 else:
                     det_ls.append(np.nan)
 
@@ -290,6 +381,7 @@ def order_coastline_points(coastline_masks, label_masks):
             else:
                 break_loop = False
                 next_point = neighbours[np.nanargmin(det_ls)]
+                #next_point = neighbours[np.nanargmax(det_ls)]
 
             if break_loop:
                 break
