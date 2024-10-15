@@ -36,40 +36,129 @@ def get_coastline(lsm):
 
     return lsm_ds
 
-def get_coastline_angle_circle(label, lsm):
+def get_weights(x, p=4, q=4, R=5, slope=-1):
+    """
+    x the distance
+    Let y1 = m1 * (x / R) ** (-p) for x > R.
+    Let y2 = S - m2 * (x / R) ** (q) for x <= R.
+    Equate y1 and y2 and their derivative at x = R to get
+    S = m1 + m2
+    slope = -p * m1 = -q * m2 => m1 = -slope/p and m2 = -slope/q
+    Thus specifying p, q, R, and the function's slope at x=R determines m1, m2 and S.
+
+    From Ewan Short
+    """
+    m1 = -slope/p
+    m2 = -slope/q
+    S = m1 + m2
+    y = np.zeros_like(x,dtype=np.float32)
+    y[x > R] = m1 * (x[x > R] / R) ** (-p)
+    y[x <= R] = S - m2 * (x[x <= R] / R) ** (q)
+    y[x==0] = np.nan
+    return y
+
+def fill_coastline_angles(angle_ds):
 
     '''
-    Ewan's method. Construct a "kernel" for each coastline point based on the anlgle between that point and all other points in the domain, then average..
+    Fill in coastline nan values for the kernel method. Uses nearest neighbour
+    Note that angles aren't defined at the coastline for this method
+    '''
+
+    # ravel all points and find the valid ones
+    points = angle_ds.angle.values.ravel()
+    valid = ~np.isnan(points)
+    points_valid = points[valid]
+    
+    # construct arrays of (x, y, z) points, masked to only include the valid points
+    xx, yy = np.meshgrid(angle_ds.lon.values, angle_ds.lat.values)
+    xx, yy = xx.ravel(), yy.ravel()
+    xxv = xx[valid]
+    yyv = yy[valid]
+    
+    # feed these into the interpolator, and also provide the target grid
+    interpolated = scipy.interpolate.griddata(np.stack([xxv, yyv]).T, points_valid, (xx, yy), method="nearest")
+    
+    # reshape to match the original array and replace the DataArray values with
+    # the interpolated data
+    angle_ds["angle_interp"] = (("lat","lon"),interpolated.reshape(angle_ds.angle.shape))
+    angle_ds["coast"] = (("lat","lon"),np.isnan(angle_ds.angle).values * 1)
+
+    return angle_ds    
+
+def get_coastline_angle_kernel(lsm,R=0.2):
+
+    '''
+    Ewan's method with help from Jarrah.
+    
+    Construct a "kernel" for each coastline point based on the anlgle between that point and all other points in the domain, then average..
 
     Input
-    label: a labelled coastline array
     lsm: xarray dataarray with a binary lsm, and lat lon info
 
     Output
-    an array of coastline angles (0-360 degrees from N) for the labelled coasline array
+    An xarray dataset with an array of coastline angles (0-360 degrees from N) for the labelled coastline array, as well as an array
+    of angle variance as an estimate of how many coastlines are influencing a given point
     '''
 
+    #From the land sea mask define the coastline and a label array
+    coast_label = find_boundaries(lsm)*1
+    land_label = lsm.values
+
+    #Get lat lon info for domain and coastline, and convert to lower precision
     lon = lsm.lon.values
     lat = lsm.lat.values
     xx,yy = np.meshgrid(lon,lat)
+    xx = xx.astype(np.float16)
+    yy = yy.astype(np.float16)    
 
-    xl, yl = np.where(label)
+    #Define coastline x,y indices from the coastline mask
+    xl, yl = np.where(coast_label)
 
-    angle_ls = []
-    for t in tqdm.tqdm(np.arange(len(xl))):
-        angles = np.zeros(label.shape) * np.nan
-        for i in range(xx.shape[0]):
-            for j in range(xx.shape[1]):
-                angles[i,j] = np.arctan2(
-                    xx[i,j] - xx[xl[t],yl[t]],
-                    yy[i,j] - yy[xl[t],yl[t]])
-        
-        angles = np.rad2deg(angles)
-        angles = (angles-90) % 360
+    #Get coastline lat lon vectors
+    yy_t = np.array([yy[xl[t],yl[t]] for t in np.arange(len(yl))])
+    xx_t = np.array([xx[xl[t],yl[t]] for t in np.arange(len(xl))])
 
-        angle_ls.append(angles)
+    #Repeat the 2d lat lon array over a third dimension (corresponding to the coast dim)
+    yy_rep=np.repeat(yy[:,:,np.newaxis],yl.shape[0],axis=2)
+    xx_rep=np.repeat(xx[:,:,np.newaxis],xl.shape[0],axis=2)
 
-    return np.where(label,scipy.stats.circmean(np.stack(angle_ls), axis=0, high=360, low=0),np.nan)
+    #Compute the differences in complex space for each coastline points. 
+    stack = np.zeros(xx_rep.shape,dtype=np.complex64)
+    for t in tqdm.tqdm(range(yl.shape[0])):
+        stack[:,:,t] = (yy_rep[:,:,t] - yy_t[t])*1j + (xx_rep[:,:,t] - xx_t[t])    
+    del yy_rep,xx_rep
+    
+    #Reorder to work with the array easier
+    stack = np.moveaxis(stack, -1, 0)
+
+    #Get the real part of the complex numbers
+    stack_abs = np.abs(stack,dtype=np.float32)
+    
+    #Create an inverse distance weighting function
+    #weights = get_weights(np.abs(stack), p=4, q=2, R=R, slope=-1)
+    weights = get_weights(stack_abs, p=4, q=2, R=R, slope=-1)
+
+    #Take the weighted mean and convert complex numbers to an angle
+    mean_angles = np.mean( (weights*stack) , axis=0)
+    mean_angles = np.angle(mean_angles)    
+
+    #Flip the angles inside the coastline for convention, and convert range to 0 to 2*pi
+    mean_angles = np.where(land_label==1,(mean_angles+np.pi) % (2*np.pi),mean_angles % (2*np.pi))
+    
+    #Calculate the weighted circular variance
+    total_weight = np.sum(weights, axis=0)
+    weights = weights/total_weight
+    stack = stack / np.abs(stack)
+    variance = 1 - np.abs(np.sum(weights*stack, axis=0))  
+
+    #Reverse the angles for consistency with previous methods, and convert to degrees
+    mean_angles = -np.rad2deg(mean_angles) + 360
+
+    #Convert to dataarrays
+    angle_da = xr.DataArray(mean_angles,coords={"lat":lat,"lon":lon})
+    var_da = xr.DataArray(variance,coords={"lat":lat,"lon":lon})
+
+    return xr.Dataset({"angle":angle_da,"variance":var_da})
 
 def get_coastline_angle_sorting(lsm,N=10,size_thresh=10,erosion_footprint=morphology.disk(2)):
 
