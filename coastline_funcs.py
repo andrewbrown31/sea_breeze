@@ -138,12 +138,25 @@ def get_coastline_angle_kernel(lsm,R=0.2):
     #weights = get_weights(np.abs(stack), p=4, q=2, R=R, slope=-1)
     weights = get_weights(stack_abs, p=4, q=2, R=R, slope=-1)
 
-    #Take the weighted mean and convert complex numbers to an angle
+    #Take the weighted mean and convert complex numbers to an angle and magnitude
     mean_angles = np.mean( (weights*stack) , axis=0)
+    mean_abs = np.abs(mean_angles)
     mean_angles = np.angle(mean_angles)    
 
     #Flip the angles inside the coastline for convention, and convert range to 0 to 2*pi
     mean_angles = np.where(land_label==1,(mean_angles+np.pi) % (2*np.pi),mean_angles % (2*np.pi))
+
+    #Convert angles and magnitude back to complex numbers to do interpolation across the coastline
+    mean_complex = mean_abs * np.exp(1j*mean_angles)
+
+    #Do the interpolation across the coastline
+    points = mean_complex.ravel()
+    valid = ~np.isnan(points)
+    points_valid = points[valid]
+    xx_rav, yy_rav = xx.ravel(), yy.ravel()
+    xxv = xx_rav[valid]
+    yyv = yy_rav[valid]
+    interpolated_angles = scipy.interpolate.griddata(np.stack([xxv, yyv]).T, points_valid, (xx, yy), method="linear").reshape(lsm.shape)    
     
     #Calculate the weighted circular variance
     total_weight = np.sum(weights, axis=0)
@@ -153,12 +166,15 @@ def get_coastline_angle_kernel(lsm,R=0.2):
 
     #Reverse the angles for consistency with previous methods, and convert to degrees
     mean_angles = -np.rad2deg(mean_angles) + 360
+    interpolated_angles = -np.rad2deg(np.angle(interpolated_angles)) % 360
 
     #Convert to dataarrays
     angle_da = xr.DataArray(mean_angles,coords={"lat":lat,"lon":lon})
+    interpolated_angle_da = xr.DataArray(interpolated_angles,coords={"lat":lat,"lon":lon})
     var_da = xr.DataArray(variance,coords={"lat":lat,"lon":lon})
+    coast = xr.DataArray(np.isnan(mean_angles) * 1,coords={"lat":lat,"lon":lon})
 
-    return xr.Dataset({"angle":angle_da,"variance":var_da})
+    return xr.Dataset({"angle":angle_da,"variance":var_da,"angle_interp":interpolated_angle_da,"coast":coast})
 
 def get_coastline_angle_sorting(lsm,N=10,size_thresh=10,erosion_footprint=morphology.disk(2)):
 
