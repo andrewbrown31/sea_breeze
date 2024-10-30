@@ -374,6 +374,8 @@ def load_aus2200_static(exp_id,lon_slice,lat_slice):
 
     * lon_slice: a slice to restrict lon domain
     '''
+
+    assert exp_id in ['mjo-elnino', 'mjo-lanina', 'mjo-neutral'], "exp_id must either be 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'"
     
     orog = xr.open_dataset("/g/data/ua8/AUS2200/"+exp_id+"/v1-0/fx/orog/orog_AUS2200_"+exp_id+"_fx.nc").\
             sel(lat=lat_slice,lon=lon_slice)
