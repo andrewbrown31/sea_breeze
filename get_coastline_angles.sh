@@ -1,12 +1,13 @@
 #!/bin/bash
 
 #PBS -P gb02 
-#PBS -q hugemem
-#PBS -l walltime=12:00:00,mem=1470GB 
-#PBS -l ncpus=1
+#PBS -q normal
+#PBS -l walltime=24:00:00,mem=190GB 
+#PBS -l ncpus=48
+#PBS -l jobfs=100gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/get_coastline_angles.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/get_coastline_angles.e
-#PBS -l storage=gdata/gb02+gdata/ob53+gdata/hh5+gdata/rt52
+#PBS -l storage=gdata/gb02+gdata/ob53+gdata/hh5+gdata/rt52+gdata/ua8
  
 #Set up conda/shell environments 
 module use /g/data/hh5/public/modules

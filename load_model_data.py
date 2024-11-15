@@ -244,7 +244,7 @@ def get_intake_cat_era5():
 
     return data_catalog
 
-def load_barra_wind_data(unames, vnames, t1, t2, domain_id, freq, lat_slice, lon_slice, vert_coord):
+def load_barra_wind_data(unames, vnames, t1, t2, domain_id, freq, lat_slice, lon_slice, vert_coord, chunks="auto"):
 
     '''
     Load BARRA wind components using the intake catalog, and combine either by height (e.g. if combining u100m and u1000m) or pressure (e.g. if combining u1000 and u500).
@@ -280,12 +280,12 @@ def load_barra_wind_data(unames, vnames, t1, t2, domain_id, freq, lat_slice, lon
         u_ds.append(data_catalog.search(variable_id=uname,
                             domain_id=domain_id,
                             freq=freq,
-                            start_time=times).to_dask().sel(
+                            start_time=times).to_dask(cdf_kwargs={"chunks":chunks}).sel(
                                 lon=lon_slice, lat=lat_slice, time=slice(t1,t2)).rename({uname:"u"}))
         v_ds.append(data_catalog.search(variable_id=vname,
                                     domain_id=domain_id,
                                     freq=freq,
-                                    start_time=times).to_dask().sel(
+                                    start_time=times).to_dask(cdf_kwargs={"chunks":chunks}).sel(
                                         lon=lon_slice, lat=lat_slice, time=slice(t1,t2)).rename({vname:"v"}))        
         
     wind_ds = xr.Dataset({
@@ -312,11 +312,12 @@ def load_barra_variable(vnames, t1, t2, domain_id, freq, lat_slice, lon_slice, c
     '''
     vnames: list of names of barra variables
     t1: start time in %Y-%m-%d %H:%M"
-    t1: end time in %Y-%m-%d %H:%M"
+    t2: end time in %Y-%m-%d %H:%M"
     domain_id: for barra, either AUS-04 or AUST-11
     freq: frequency string (e.g. 1h)
     lat_slice: a slice to restrict lat domain
     lon_slice: a slice to restrict lon domain
+    chunks: dict describing the number of chunks. see xr.open_dataset
     '''
 
     data_catalog = get_intake_cat()
@@ -382,4 +383,77 @@ def load_aus2200_static(exp_id,lon_slice,lat_slice):
     lsm = xr.open_dataset("/g/data/ua8/AUS2200/"+exp_id+"/v1-0/fx/lmask/lmask_AUS2200_"+exp_id+"_fx.nc").\
             sel(lat=lat_slice,lon=lon_slice)
 
-    return orog.orog, lsm.lmask
+    return orog.orog, ((lsm.lmask==100)*1)
+
+def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto"):
+
+    '''
+    Load static fields for the mjo-enso AUS2200 experiment, stored on the ua8 project
+
+    ## Input
+
+    * vnames: list of names of aus2200 variables
+
+    * t1: start time in %Y-%m-%d %H:%M"
+
+    * t2: start time in %Y-%m-%d %H:%M"
+    
+    * exp_id: string describing the experiment. either 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'
+
+    * lat_slice: a slice to restrict lat domain
+
+    * lon_slice: a slice to restrict lon domain
+
+    * freq: time frequency (string). either "10min", "1hr", "1hrPlev"
+
+    * hgt_slice: a slice to restrict data in the vertical (in m)
+
+    * chunks: dict describing the number of chunks. see xr.open_dataset
+    '''
+
+    assert exp_id in ['mjo-elnino', 'mjo-lanina', 'mjo-neutral'], "exp_id must either be 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'"
+    assert freq in ["10min", "1hr", "1hrPlev"], "exp_id must either be '10min', '1hr', '1hrPlev'"
+
+    out = dict.fromkeys(vnames)
+    for vname in vnames:
+
+        fnames = "/g/data/ua8/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200_"+exp_id+"_*.nc"
+        ds = xr.open_mfdataset(fnames, chunks=chunks).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
+        if hgt_slice is not None:
+            ds = ds.sel(lev=hgt_slice)
+        out[vname] = ds
+
+    return out
+
+def destagger_aus2200(ds_dict,destag_list,interp_to=None,lsm=None):
+
+    """
+    
+    From a dictionary of aus2200 datasets (output from load_aus2200_variable), destagger variables in destag_list by interpolating
+    
+    ## Input
+    * ds_dict: a dictionary of aus2200 xarray datasets. output from load_aus2200_variable()
+
+    * destag_list: list of variables to destagger
+
+    * interp_to: variable for which to use spatial info to interp onto
+
+    * lsm: land sea mask dataset to interp on to
+
+    ## Output
+    a dictionary of datasets with destaggered variables
+
+    ## Example
+    destagger_aus2200(ds_dict, ["uas","vas"], "hus")
+
+    """
+
+    for vars in destag_list:
+        if interp_to is not None:
+            ds_dict[vars] = ds_dict[vars].interp_like(ds_dict[interp_to],method="linear")
+        elif lsm is not None:
+            ds_dict[vars] = ds_dict[vars].interp_like(lsm,method="linear")
+        else:
+            raise Exception("Need to input either a variable to interp to, or a land sea mask, to get spatial info")
+        
+    return ds_dict

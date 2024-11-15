@@ -160,7 +160,7 @@ def kinematic_frontogenesis(q,u,v,subtract_mean=False,weighted_mean=True,wind_ds
     Will identify all regions where moisture fronts are increasing/decreasing due to deformation/convergence, including potentially sea breeze fronts
 
     Inputs
-    * q: xarray dataarray of water vapour mixing ratio (although this function should work with any scalar). Expects lat/lon/time coordinates. Assume units are in kg/kg
+    * q: xarray dataarray of water vapour mixing ratio (although this function should work with any scalar). Expects lat/lon/time coordinates.
 
     * u: as above for a u wind component
 
@@ -188,15 +188,32 @@ def kinematic_frontogenesis(q,u,v,subtract_mean=False,weighted_mean=True,wind_ds
         u = u - u_mean
         v = v - v_mean
 
-    Fq = mpcalc.frontogenesis(q*units.units("K"),
-                            u * units.units("m/s"),
-                            v * units.units("m/s"),
+    Fq = mpcalc.frontogenesis(q,
+                            u,
+                            v,
                             x_dim=q.get_axis_num("lon"),
                             y_dim=q.get_axis_num("lat")) * 1.08e9
     
     return Fq
 
-def moisture_gradient_convergence(q,u,v,angle_ds):
+def coast_relative_frontogenesis(q,u,v,angle_ds):
+
+    """
+    This function calculates 2d shearing and confluence in the moisture field, using a wind field that has been rotated to be coastline-relative.
+
+    ## Input:
+    * q: xarray dataarray of specific humidity
+
+    * u: xarray dataarray of u winds
+
+    * v: xarray dataarray of v winds
+
+    * angle_ds: xarray dataset containing coastline angles ("angle_interp")
+
+    ## Output:
+    * xarray dataset with variables of "shearing" and "confluence". These describe the changes in the moisture gradient due to strecthing and shearing relative to the coastline.
+    
+    """
 
     #Define angle of coastline orientation from N
     theta=angle_ds.angle_interp 
@@ -207,19 +224,68 @@ def moisture_gradient_convergence(q,u,v,angle_ds):
     #Define normal angle vectors, pointing onshore
     cx, cy = [-np.cos(np.deg2rad(rotated_angle)), np.sin(np.deg2rad(rotated_angle))]
 
-    #Calculate the wind component perpendicular to the coast by using the normal unit vectors
+    #Define normal angle vectors, pointing alongshore
+    ax, ay = [-np.cos(np.deg2rad(rotated_angle - 90)), np.sin(np.deg2rad(rotated_angle - 90))]    
+
+    #Calculate the wind component perpendicular and parallel to the coast by using the normal unit vectors
     vprime = ((u*cx) + (v*cy))
+    uprime = ((u*ax) + (v*ay))
 
-    #Calculate cross-shore surface moisture gradient and plot
+    #Calculate the gradients of moisture, and (rotated) winds in x/y coordinates
     dq_dx, dq_dy = mpcalc.geospatial_gradient((q * units.units("g/g")).metpy.convert_units("g/kg"), x_dim=q.get_axis_num("lon"), y_dim=q.get_axis_num("lat"))
-    dq_dc = (dq_dx*cx.values) + (dq_dy*cy.values)
-
-    #Calculate cross-shore gradient in onshore wind component 
     dvprime_dx, dvprime_dy = mpcalc.geospatial_gradient(vprime*units.units("m/s"), x_dim=vprime.get_axis_num("lon"), y_dim=vprime.get_axis_num("lat"))
+    duprime_dx, duprime_dy = mpcalc.geospatial_gradient(uprime*units.units("m/s"), x_dim=uprime.get_axis_num("lon"), y_dim=uprime.get_axis_num("lat"))
+
+    #Rotate gradients to cross shore (c) and along shore (a)
+    dq_dc = (dq_dx*cx.values) + (dq_dy*cy.values)    
     dvprime_dc = (dvprime_dx*cx.values) + (dvprime_dy*cy.values)
+    duprime_dc = (duprime_dx*cx.values) + (duprime_dy*cy.values)
+
+    dq_da = (dq_dx*ax.values) + (dq_dy*ay.values)    
 
     #Calculate the gradient in moisture convergence, convert to a Dataarray, and return
-    dq_conv = (dq_dc * dvprime_dc)
+    confluence = dq_dc * dvprime_dc
+    shearing = dq_da * duprime_dc
+    
+    return xr.Dataset({
+        "confluence":xr.DataArray(confluence.to("g/kg/km/hr"),coords=q.coords),
+        "shearing":xr.DataArray(shearing.to("g/kg/km/hr"),coords=q.coords)})
+
+
+def frontogenesis_rotated(q,u,v,angle_ds):
+
+    #Define angle of coastline orientation from N
+    theta=angle_ds.angle_interp 
+
+    #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
+    rotated_angle=(((theta)%360-90)%360) + 90   
+
+    #Define normal angle vectors, pointing onshore
+    cx, cy = [-np.cos(np.deg2rad(rotated_angle)), np.sin(np.deg2rad(rotated_angle))]
+
+    #Define normal angle vectors, pointing alongshore
+    ax, ay = [-np.cos(np.deg2rad(rotated_angle - 90)), np.sin(np.deg2rad(rotated_angle - 90))]    
+
+    #Calculate the wind component perpendicular and parallel to the coast by using the normal unit vectors
+    vprime = ((u*cx) + (v*cy))
+    uprime = ((u*ax) + (v*ay))
+
+    #Calculate the gradients of moisture, and (rotated) winds in x/y coordinates
+    dq_dx, dq_dy = mpcalc.geospatial_gradient((q * units.units("g/g")).metpy.convert_units("g/kg"), x_dim=q.get_axis_num("lon"), y_dim=q.get_axis_num("lat"))
+    dvprime_dx, dvprime_dy = mpcalc.geospatial_gradient(vprime*units.units("m/s"), x_dim=vprime.get_axis_num("lon"), y_dim=vprime.get_axis_num("lat"))
+    duprime_dx, duprime_dy = mpcalc.geospatial_gradient(uprime*units.units("m/s"), x_dim=uprime.get_axis_num("lon"), y_dim=uprime.get_axis_num("lat"))
+
+    #Rotate gradients to cross shore (c) and along shore (a)
+    dq_dc = (dq_dx*cx.values) + (dq_dy*cy.values)    
+    dvprime_dc = (dvprime_dx*cx.values) + (dvprime_dy*cy.values)
+    duprime_dc = (duprime_dx*cx.values) + (duprime_dy*cy.values)
+
+    dq_da = (dq_dx*ax.values) + (dq_dy*ay.values)    
+
+    #Calculate the gradient in moisture convergence, convert to a Dataarray, and return
+    #dq_conv = (dq_dc * dvprime_dc)
+    confluence = dq_dc * dvprime_dc
+    shearing = dq_da * duprime_dc
     
     return xr.DataArray(dq_conv.to("g/kg/km/hr"),coords={"time":q.time,"lat":q.lat,"lon":q.lon})
 

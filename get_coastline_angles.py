@@ -1,7 +1,11 @@
-from coastline_funcs import get_coastline_angle_kernel
+from coastline_funcs import get_coastline_angle_kernel,get_coastline_angle_kernel_dask
 from load_model_data import load_barra_static, load_era5_static, remove_era5_inland_lakes, load_aus2200_static
+from climtas.nci import GadiClient
 
 if __name__ == "__main__":
+
+    #Initiate distributed dask client on the Gadi HPC
+    client = GadiClient()
 
     #This slice is the outer bounds of the BARRA-C2 domain
     # lon_slice = slice(108,160)
@@ -17,8 +21,8 @@ if __name__ == "__main__":
 
     #BARRA-R
     # _, barra_r_lsm = load_barra_static("AUS-11",lon_slice,lat_slice)
-    # barra_r_angles = get_coastline_angle_kernel(barra_r_lsm)
-    # barra_r_angles.to_netcdf("/g/data/gb02/ab4502/coastline_data/barra_r_angles_v2.nc")
+    # barra_r_angles = get_coastline_angle_kernel_dask(barra_r_lsm,coast_dim_chunk_size=100)
+    # barra_r_angles.to_netcdf("/g/data/gb02/ab4502/coastline_data/barra_r_angles_v3.nc")
     
     # #ERA5
     # _, era5_lsm, era5_cl = load_era5_static(lon_slice,lat_slice,"2023-01-01 00:00","2023-01-01 00:00")
@@ -41,5 +45,5 @@ if __name__ == "__main__":
 
     #AUS2200
     _, aus2200_lsm = load_aus2200_static("mjo-neutral",lon_slice,lat_slice)
-    aus2200_angles = get_coastline_angle_kernel(aus2200_lsm)
-    aus2200_angles.to_netcdf("/g/data/gb02/ab4502/coastline_data/aus2200_v2.nc")
+    aus2200_angles = get_coastline_angle_kernel_dask(aus2200_lsm, coast_dim_chunk_size=8)
+    aus2200_angles.to_netcdf("/g/data/gb02/ab4502/coastline_data/aus2200_v3.nc")
