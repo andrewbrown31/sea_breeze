@@ -5,8 +5,9 @@ import metpy.calc as mpcalc
 import metpy.units as units
 import scipy
 import tqdm
+import dask.array as da
 
-def load_angle_ds(path,lat_slice,lon_slice):
+def load_angle_ds(path,lat_slice,lon_slice,chunks="auto"):
     """
     Return an xarray dataset of angles defined by coastline_funcs.get_coastline_angle_kernel()
     e.g. 
@@ -17,8 +18,10 @@ def load_angle_ds(path,lat_slice,lon_slice):
     * "/g/data/gb02/ab4502/coastline_data/barra_c_angles_v2.nc"
 
     * "/g/data/gb02/ab4502/coastline_data/era5_global_angles_v2.nc"
+
+    * "/g/data/gb02/ab4502/coastline_data/aus2200_v3.nc"
     """
-    return xr.open_dataset(path).sel(lat=lat_slice,lon=lon_slice)
+    return xr.open_dataset(path,chunks=chunks).sel(lat=lat_slice,lon=lon_slice)
 
 def single_col_circulation(wind_ds,
                     angle_ds,
@@ -58,11 +61,12 @@ def single_col_circulation(wind_ds,
     * height_method: String used to choose the method for selecting upper level heights to define a circulation. Either "static" or "blh". "static" uses static height limits defined by lb_heights/sb_heights, blh uses the blh_ds.
 
     * blh_rolling: Integer used to define the number of rolling time windows over which to take the maximum. If zero then no rolling max is taken.
+
+    ### Output
+    * xarray dataset with sbi and lbi
     '''
 
-    #era5_uprime, era5_vprime = rotate_u_v_coast(wind_ds["u"], wind_ds["v"], angle_ds        ["angle_interp"])
     #TODO
-    #Options on how to define mean wind (temporal mean, height-mean, pressure level(s), spatial)?
     #Check how this looks in different situations (e.g. for a front)
 
     #Subtract the mean wind. Define mean as the mean over mean_heights m level, or the daily mean
@@ -79,8 +83,8 @@ def single_col_circulation(wind_ds,
 
     #Calculate wind directions (from N) for low level (alpha) and all levels (beta)
     alpha = (90 - np.rad2deg(np.arctan2(
-        -wind_ds["v"].sel(height=alpha_height),
-        -wind_ds["u"].sel(height=alpha_height)))) % 360
+        -wind_ds["v"].sel(height=alpha_height,method="nearest"),
+        -wind_ds["u"].sel(height=alpha_height,method="nearest")))) % 360
     beta = (90 - np.rad2deg(np.arctan2(
         -wind_ds["v"], 
         -wind_ds["u"]))) % 360
@@ -106,8 +110,13 @@ def single_col_circulation(wind_ds,
     lbi = xr.where(lb_cond[0] & lb_cond[1] & lb_cond[2], lbi, 0)
 
     #Return the max over some height. Either defined statically or boundary layer height
-    _,_,_,hh = np.meshgrid(wind_ds.time,wind_ds.lat,wind_ds.lon,wind_ds.height)
-    wind_ds["height_var"] = (("lat","time","lon","height"),hh)
+    #_,_,_,hh = np.meshgrid(wind_ds.time,wind_ds.lat,wind_ds.lon,wind_ds.height)
+    _,_,_,hh = da.meshgrid(
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[0]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[0]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[1]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[1]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[2]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[2]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[3]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[3]][0]}), indexing="ij")
+    wind_ds["height_var"] = (wind_ds.u.dims,hh)
     if height_method=="static":
         sbi = xr.where((sbi.height >= sb_heights[0]) & (sbi.height <= sb_heights[1]),sbi,0)
         lbi = xr.where((lbi.height >= lb_heights[0]) & (lbi.height <= lb_heights[1]),lbi,0)
@@ -118,49 +127,160 @@ def single_col_circulation(wind_ds,
         lbi = xr.where((wind_ds.height_var <= blh_da),lbi,0)
     else:
         raise ValueError("Invalid height method")
-    
-    #Calculate the following characteristics of the circulation identified by this method
-    #Min height where sbi>0 (bottom of return flow)
-    sbi_h_min = xr.where(sbi>0, wind_ds["height_var"], np.nan).min("height")
-    #Max height where sbi>0 (top of return flow)
-    sbi_h_max = xr.where(sbi>0, wind_ds["height_var"], np.nan).max("height")
-    #Height of max sbi (where the return flow most opposes the low level flow)
-    sbi_max_inds = sbi.idxmax(dim="height")
-    sbi_max_h = xr.where(sbi>0, wind_ds["height_var"], np.nan).sel(height=sbi_max_inds)
 
-    #Same but for the lbi
-    lbi_h_min = xr.where(lbi>0, wind_ds["height_var"], np.nan).min("height")
-    lbi_h_max = xr.where(lbi>0, wind_ds["height_var"], np.nan).max("height")
-    lbi_max_inds = lbi.idxmax(dim="height")
-    lbi_max_h = xr.where(lbi>0, wind_ds["height_var"], np.nan).sel(height=lbi_max_inds)
+    #TODO: Currently this code below doesn't work well in xarray with dask. I think it is idxmax
+    # that forces computation and rechunking. Need to revisit this to make efficient    
+    #Calculate the following characteristics of the circulation identified by this method
+    # #Min height where sbi>0 (bottom of return flow)
+    # sbi_h_min = xr.where(sbi>0, wind_ds["height_var"], np.nan).min("height")
+    # #Max height where sbi>0 (top of return flow)
+    # sbi_h_max = xr.where(sbi>0, wind_ds["height_var"], np.nan).max("height")
+    # #Height of max sbi (where the return flow most opposes the low level flow)
+    # sbi_max_inds = sbi.idxmax(dim="height").chunk({"time":sbi.chunksizes["time"][0]})
+    # sbi_max_h = xr.where(sbi>0, wind_ds["height_var"], np.nan).sel(height=sbi_max_inds)
+
+    # #Same but for the lbi
+    # lbi_h_min = xr.where(lbi>0, wind_ds["height_var"], np.nan).min("height")
+    # lbi_h_max = xr.where(lbi>0, wind_ds["height_var"], np.nan).max("height")
+    # lbi_max_inds = lbi.idxmax(dim="height").chunk({"time":sbi.chunksizes["time"][0]})
+    # lbi_max_h = xr.where(lbi>0, wind_ds["height_var"], np.nan).sel(height=lbi_max_inds)
 
     #Compute each index as the max in the column
     sbi = sbi.max("height")
     lbi = lbi.max("height")
 
     #Dataset output
+    # sbi_ds = xr.Dataset({
+    #     "sbi":sbi,
+    #     "sbi_h_min":sbi_h_min,
+    #     "sbi_h_max":sbi_h_max,
+    #     "sbi_max_h":sbi_max_h.drop_vars("height"),
+    #     "lbi":lbi,
+    #     "lbi_h_max":lbi_h_max,
+    #     "lbi_h_min":lbi_h_min,
+    #     "lbi_max_h":lbi_max_h.drop_vars("height")
+    # }
+    # )
     sbi_ds = xr.Dataset({
         "sbi":sbi,
-        "sbi_h_min":sbi_h_min,
-        "sbi_h_max":sbi_h_max,
-        "sbi_max_h":sbi_max_h.drop_vars("height"),
-        "lbi":lbi,
-        "lbi_h_max":lbi_h_max,
-        "lbi_h_min":lbi_h_min,
-        "lbi_max_h":lbi_max_h.drop_vars("height")
+        "lbi":lbi
     }
-    )
+    )        
 
     return sbi_ds
 
-def kinematic_frontogenesis(q,u,v,subtract_mean=False,weighted_mean=True,wind_ds=None,mean_heights=[0,4500],vert_coord="level"):
+def moisture_flux_gradient(q, u, v, angle_ds):
+
+    """
+    Calculate d(qu)/dt
+
+    ## Input
+    * q: xarray dataarray of specific humidity in kg/kg
+
+    * u: xarray dataarray of u winds in m/s
+
+    * v: xarray dataarray of v winds in m/s
+
+    * angle_ds: xarray dataset containing coastline angles ("angle_interp")
+
+    ## Output:
+    * xarray dataset
+    """
+
+    #Convert hus to g/kg 
+    q = q * 1000
+    
+    #Define angle of coastline orientation from N
+    theta=angle_ds.angle_interp 
+    
+    #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
+    rotated_angle=(((theta)%360-90)%360) + 90   
+    
+    #Define normal angle vectors, pointing onshore
+    cx, cy = [-np.cos(np.deg2rad(rotated_angle)), np.sin(np.deg2rad(rotated_angle))]
+    
+    #Calculate the wind component perpendicular and parallel to the coast by using the normal unit vectors
+    vprime = ((u*cx) + (v*cy))
+
+    #Calculate the rate of change
+    dqu_dt = (vprime*q).differentiate("time",datetime_unit="s")
+
+    return dqu_dt    
+
+def kinematic_frontogenesis(q,u,v):
+
+    """
+    Calculate 2d kinematic frontogenesis, with water vapour mixing ratio
+    Will identify all regions where moisture fronts are increasing/decreasing due to deformation/convergence, including potentially sea breeze fronts
+
+    Uses metpy formulation but in numpy/xarray, for efficiency
+    https://github.com/Unidata/MetPy/blob/756ce975eb25d17827924da21d5d77f38a184bd4/src/metpy/calc/kinematics.py#L478
+
+    Inputs
+    * q: xarray dataarray of water vapour mixing ratio (although this function should work with any scalar). Expects lat/lon/time coordinates in units kg/kg
+
+    * u: as above for a u wind component
+
+    * v: as above for a v wind component
+
+    * subtract_mean: boolean option for whether to subtract the mean background wind, and calculate frontogenesis using perturbation winds. mean defined by a vertical avg over mean_heights
+
+    * weighted_mean: if true, take the vertical mean weighted by the vertical coordinate 
+
+    * wind_ds: dataset with u and v winds on vertical levels
+
+    * mean_heights: heights between which to average, in unite of vert_coord
+
+    * vert_coord: if wind_ds is being used to take a vertical average, what is the vertical coord
+
+    Returns
+    * 2d kinematic frontogenesis in units (g/kg) / 100 km / 3h    """
+
+    #Convert specific humidity to g/kg
+    q = q*1000
+
+    #Calculate grid spacing in km using metpy, in x and y
+    x, y = np.meshgrid(q.lon,q.lat)
+    dx, dy = mpcalc.lat_lon_grid_deltas(x,y)
+
+    #Convert the x and y grid spacing arrays into xarray datasets. Need to interpolate to match the original grid
+    dx = xr.DataArray(np.array(dx),dims=["lon","lat"],coords={"lat":q.lat.values[0:-1], "lon":q.lon.values}).\
+            interp({"lon":q.lon,"lat":q.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
+            chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})
+    dy = xr.DataArray(np.array(dy),dims=["lon","lat"],coords={"lat":q.lat.values, "lon":q.lon.values[0:-1]}).\
+            interp({"lon":q.lon,"lat":q.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
+            chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})
+
+    #Calculate horizontal moisture gradient
+    ddy_q = (xr.DataArray(da.gradient(q,axis=q.get_axis_num("lat")), dims=q.dims, coords=q.coords) / dy)
+    ddx_q = (xr.DataArray(da.gradient(q,axis=q.get_axis_num("lon")), dims=q.dims, coords=q.coords) / dx)
+    mag_dq = np.sqrt( ddy_q**2 + ddx_q**2)
+
+    #Calculate horizontal U and V gradients, as well as divergence and deformation 
+    #Following https://www.ncl.ucar.edu/Document/Functions/Contributed/shear_stretch_deform.shtml
+    ddy_u = (xr.DataArray(da.gradient(u,axis=q.get_axis_num("lat")), dims=q.dims, coords=q.coords) / dy)
+    ddx_u = (xr.DataArray(da.gradient(u,axis=q.get_axis_num("lon")), dims=q.dims, coords=q.coords) / dx)
+    ddy_v = (xr.DataArray(da.gradient(v,axis=q.get_axis_num("lat")), dims=q.dims, coords=q.coords) / dy)
+    ddx_v = (xr.DataArray(da.gradient(v,axis=q.get_axis_num("lon")), dims=q.dims, coords=q.coords) / dx)
+    div = ddx_u + ddy_v
+    strch_def = ddx_u - ddy_v
+    shear_def = ddx_v + ddy_u
+    tot_def = np.sqrt(strch_def**2 + shear_def**2)
+
+    #Calculate the angle between axis of dilitation and isentropes
+    psi = 0.5 * np.arctan2(shear_def, strch_def)
+    beta = np.arcsin((-ddx_q * np.cos(psi) - ddy_q * np.sin(psi)) / mag_dq)
+
+    return 0.5 * mag_dq * (tot_def * np.cos(2 * beta) - div) * 1.08e9
+
+def kinematic_frontogenesis_metpy(q,u,v,subtract_mean=False,weighted_mean=True,wind_ds=None,mean_heights=[0,4500],vert_coord="level"):
 
     '''
     Use the frontogenesis metpy function to calculate 2d kinematic frontogenesis, with water vapour mixing ratio
     Will identify all regions where moisture fronts are increasing/decreasing due to deformation/convergence, including potentially sea breeze fronts
 
     Inputs
-    * q: xarray dataarray of water vapour mixing ratio (although this function should work with any scalar). Expects lat/lon/time coordinates.
+    * q: xarray dataarray of water vapour mixing ratio (although this function should work with any scalar). Expects lat/lon/time coordinates in units kg/kg
 
     * u: as above for a u wind component
 
@@ -180,6 +300,27 @@ def kinematic_frontogenesis(q,u,v,subtract_mean=False,weighted_mean=True,wind_ds
     * 2d kinematic frontogenesis in units (kg/kg) / 100 km / 3h
     '''
 
+    if hasattr(q, "units"):
+        if q.units == "K":
+            pass
+        else:
+            q = q * units.units("K")
+
+    #Convert to g/kg
+    q = q * 1000 
+
+    if hasattr(u, "units"):
+        if (u.units == "m/s") | (u.units ==  'm s-1'):
+            pass
+        else:
+            u = u * units.units("m/s")
+
+    if hasattr(v, "units"):
+        if (v.units == "m/s") | (v.units ==  'm s-1'):
+            pass
+        else:
+            v = v * units.units("m/s")                        
+
     if subtract_mean:
         if weighted_mean:
             u_mean, v_mean = weighted_vert_mean_wind(wind_ds,mean_heights,wind_ds[vert_coord],vert_coord)
@@ -194,6 +335,8 @@ def kinematic_frontogenesis(q,u,v,subtract_mean=False,weighted_mean=True,wind_ds
                             x_dim=q.get_axis_num("lon"),
                             y_dim=q.get_axis_num("lat")) * 1.08e9
     
+    Fq["units"] = "g/kg/100km/3hr"
+    
     return Fq
 
 def coast_relative_frontogenesis(q,u,v,angle_ds):
@@ -202,11 +345,11 @@ def coast_relative_frontogenesis(q,u,v,angle_ds):
     This function calculates 2d shearing and confluence in the moisture field, using a wind field that has been rotated to be coastline-relative.
 
     ## Input:
-    * q: xarray dataarray of specific humidity
+    * q: xarray dataarray of specific humidity in kg/kg
 
-    * u: xarray dataarray of u winds
+    * u: xarray dataarray of u winds in m/s
 
-    * v: xarray dataarray of v winds
+    * v: xarray dataarray of v winds in m/s
 
     * angle_ds: xarray dataset containing coastline angles ("angle_interp")
 
@@ -215,44 +358,20 @@ def coast_relative_frontogenesis(q,u,v,angle_ds):
     
     """
 
-    #Define angle of coastline orientation from N
-    theta=angle_ds.angle_interp 
+    #Convert to g/kg
+    q = q * 1000 
 
-    #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
-    rotated_angle=(((theta)%360-90)%360) + 90   
+    #Calculate grid spacing in km using metpy, in x and y
+    x, y = np.meshgrid(q.lon,q.lat)
+    dx, dy = mpcalc.lat_lon_grid_deltas(x,y)
 
-    #Define normal angle vectors, pointing onshore
-    cx, cy = [-np.cos(np.deg2rad(rotated_angle)), np.sin(np.deg2rad(rotated_angle))]
-
-    #Define normal angle vectors, pointing alongshore
-    ax, ay = [-np.cos(np.deg2rad(rotated_angle - 90)), np.sin(np.deg2rad(rotated_angle - 90))]    
-
-    #Calculate the wind component perpendicular and parallel to the coast by using the normal unit vectors
-    vprime = ((u*cx) + (v*cy))
-    uprime = ((u*ax) + (v*ay))
-
-    #Calculate the gradients of moisture, and (rotated) winds in x/y coordinates
-    dq_dx, dq_dy = mpcalc.geospatial_gradient((q * units.units("g/g")).metpy.convert_units("g/kg"), x_dim=q.get_axis_num("lon"), y_dim=q.get_axis_num("lat"))
-    dvprime_dx, dvprime_dy = mpcalc.geospatial_gradient(vprime*units.units("m/s"), x_dim=vprime.get_axis_num("lon"), y_dim=vprime.get_axis_num("lat"))
-    duprime_dx, duprime_dy = mpcalc.geospatial_gradient(uprime*units.units("m/s"), x_dim=uprime.get_axis_num("lon"), y_dim=uprime.get_axis_num("lat"))
-
-    #Rotate gradients to cross shore (c) and along shore (a)
-    dq_dc = (dq_dx*cx.values) + (dq_dy*cy.values)    
-    dvprime_dc = (dvprime_dx*cx.values) + (dvprime_dy*cy.values)
-    duprime_dc = (duprime_dx*cx.values) + (duprime_dy*cy.values)
-
-    dq_da = (dq_dx*ax.values) + (dq_dy*ay.values)    
-
-    #Calculate the gradient in moisture convergence, convert to a Dataarray, and return
-    confluence = dq_dc * dvprime_dc
-    shearing = dq_da * duprime_dc
-    
-    return xr.Dataset({
-        "confluence":xr.DataArray(confluence.to("g/kg/km/hr"),coords=q.coords),
-        "shearing":xr.DataArray(shearing.to("g/kg/km/hr"),coords=q.coords)})
-
-
-def frontogenesis_rotated(q,u,v,angle_ds):
+    #Convert the x and y grid spacing arrays into xarray datasets. Need to interpolate to match the original grid
+    dx = xr.DataArray(np.array(dx),dims=["lon","lat"],coords={"lat":q.lat.values[0:-1], "lon":q.lon.values}).\
+            interp({"lon":q.lon,"lat":q.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
+            chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})
+    dy = xr.DataArray(np.array(dy),dims=["lon","lat"],coords={"lat":q.lat.values, "lon":q.lon.values[0:-1]}).\
+            interp({"lon":q.lon,"lat":q.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
+            chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})    
 
     #Define angle of coastline orientation from N
     theta=angle_ds.angle_interp 
@@ -271,23 +390,37 @@ def frontogenesis_rotated(q,u,v,angle_ds):
     uprime = ((u*ax) + (v*ay))
 
     #Calculate the gradients of moisture, and (rotated) winds in x/y coordinates
-    dq_dx, dq_dy = mpcalc.geospatial_gradient((q * units.units("g/g")).metpy.convert_units("g/kg"), x_dim=q.get_axis_num("lon"), y_dim=q.get_axis_num("lat"))
-    dvprime_dx, dvprime_dy = mpcalc.geospatial_gradient(vprime*units.units("m/s"), x_dim=vprime.get_axis_num("lon"), y_dim=vprime.get_axis_num("lat"))
-    duprime_dx, duprime_dy = mpcalc.geospatial_gradient(uprime*units.units("m/s"), x_dim=uprime.get_axis_num("lon"), y_dim=uprime.get_axis_num("lat"))
+    # dq_dx, dq_dy = mpcalc.geospatial_gradient((q * units.units("g/g")).metpy.convert_units("g/kg"), x_dim=q.get_axis_num("lon"), y_dim=q.get_axis_num("lat"))
+    # dvprime_dx, dvprime_dy = mpcalc.geospatial_gradient(vprime*units.units("m/s"), x_dim=vprime.get_axis_num("lon"), y_dim=vprime.get_axis_num("lat"))
+    # duprime_dx, duprime_dy = mpcalc.geospatial_gradient(uprime*units.units("m/s"), x_dim=uprime.get_axis_num("lon"), y_dim=uprime.get_axis_num("lat"))
+
+    #Calculate horizontal moisture gradients
+    dq_dx = (xr.DataArray(da.gradient(q,axis=q.get_axis_num("lon")), dims=q.dims, coords=q.coords) / dx)
+    dq_dy = (xr.DataArray(da.gradient(q,axis=q.get_axis_num("lat")), dims=q.dims, coords=q.coords) / dy)        
+
+    #Calculate onshore and alongshore wind gradients
+    dvprime_dx = (xr.DataArray(da.gradient(vprime,axis=q.get_axis_num("lon")), dims=q.dims, coords=q.coords) / dx)
+    dvprime_dy = (xr.DataArray(da.gradient(vprime,axis=q.get_axis_num("lat")), dims=q.dims, coords=q.coords) / dy)      
+    duprime_dx = (xr.DataArray(da.gradient(uprime,axis=q.get_axis_num("lon")), dims=q.dims, coords=q.coords) / dx)
+    duprime_dy = (xr.DataArray(da.gradient(uprime,axis=q.get_axis_num("lat")), dims=q.dims, coords=q.coords) / dy)            
 
     #Rotate gradients to cross shore (c) and along shore (a)
     dq_dc = (dq_dx*cx.values) + (dq_dy*cy.values)    
     dvprime_dc = (dvprime_dx*cx.values) + (dvprime_dy*cy.values)
     duprime_dc = (duprime_dx*cx.values) + (duprime_dy*cy.values)
-
     dq_da = (dq_dx*ax.values) + (dq_dy*ay.values)    
 
     #Calculate the gradient in moisture convergence, convert to a Dataarray, and return
-    #dq_conv = (dq_dc * dvprime_dc)
     confluence = dq_dc * dvprime_dc
     shearing = dq_da * duprime_dc
     
-    return xr.DataArray(dq_conv.to("g/kg/km/hr"),coords={"time":q.time,"lat":q.lat,"lon":q.lon})
+    #Format for output and calculate the shearing plus confluence
+    out =  xr.Dataset({
+        "confluence":xr.DataArray(confluence,coords=q.coords),
+        "shearing":xr.DataArray(shearing,coords=q.coords)})
+    out["total"] = out["shearing"] + out["confluence"]
+
+    return out
 
 def weighted_vert_mean_wind(wind_ds,mean_heights,p,vert_coord):
 

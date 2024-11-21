@@ -1,5 +1,6 @@
 import xarray as xr
 import metpy
+import metpy.calc as mpcalc
 
 def load_half_hourly_stn_obs(state,time_slice):
 
@@ -18,5 +19,9 @@ def load_half_hourly_stn_obs(state,time_slice):
     stn_obs.wdir * metpy.units.units.deg)
     stn_obs["u"] = u
     stn_obs["v"] = v
+
+    #Calculate specific humidity. TODO: Change from mlsp to sp.
+    stn_obs["Tdew"] = stn_obs["Tdew"].assign_attrs(units = "degC")
+    stn_obs["hus"] = mpcalc.specific_humidity_from_dewpoint(stn_obs["mslp"],stn_obs["Tdew"])
 
     return stn_obs

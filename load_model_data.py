@@ -5,6 +5,7 @@ import pandas as pd
 import datetime as dt
 import metpy.calc as mpcalc
 import metpy.units as units
+import xesmf as xe
 
 def interp_np(x, xp, fp):
     return np.interp(x, xp, fp, right=np.nan)
@@ -42,7 +43,7 @@ def interp_model_level_to_z(z_da,var_da,mdl_dim,heights):
 
 def load_era5_ml_and_interp(t1,t2,lat_slice,lon_slice,
                             upaths=None,vpaths=None,zpaths=None,
-                            heights=np.arange(0,4600,100)):
+                            heights=np.arange(0,4600,100),chunks={"time":"auto","hybrid":-1}):
 
     """
     ## Load in ERA5 data that was downladed from the Google cloud. That includes u and v wind components as well as geopotential height. Then, interpolate from model levels to height levels.
@@ -56,6 +57,7 @@ def load_era5_ml_and_interp(t1,t2,lat_slice,lon_slice,
     vpaths: an array of paths for v data. if none use time and look in gb02 dir
     zpaths: an array of paths for z data. if none use time and look in gb02 dir    
     heights: to interpolate to (in metres)
+    chunks: dict describing the number of chunks. see xr.open_dataset
     """
 
     #Load ERA5 model level data downloaded from ERA5
@@ -72,9 +74,9 @@ def load_era5_ml_and_interp(t1,t2,lat_slice,lon_slice,
                         str(t1) + "_" + t2.strftime("%Y%m%d") +".nc" for t1,t2 in zip(time_starts,time_ends)]                
 
     #Load the data
-    u = xr.combine_by_coords([load_era5_ml(upath,t1,t2,lat_slice,lon_slice) for upath in upaths])
-    v = xr.combine_by_coords([load_era5_ml(vpath,t1,t2,lat_slice,lon_slice) for vpath in vpaths])
-    z = xr.combine_by_coords([load_era5_ml(zpath,t1,t2,lat_slice,lon_slice) for zpath in zpaths])
+    u = xr.combine_by_coords([load_era5_ml(upath,t1,t2,lat_slice,lon_slice,chunks=chunks) for upath in upaths])
+    v = xr.combine_by_coords([load_era5_ml(vpath,t1,t2,lat_slice,lon_slice,chunks=chunks) for vpath in vpaths])
+    z = xr.combine_by_coords([load_era5_ml(zpath,t1,t2,lat_slice,lon_slice,chunks=chunks) for zpath in zpaths])
     topo,lsm,_= load_era5_static(lon_slice,lat_slice,t1,t2)
     f = xr.merge((u,v,z))
 
@@ -129,7 +131,7 @@ def load_era5_variable(vnames,t1,t2,lon_slice,lat_slice,chunks="auto"):
         
     return out
 
-def load_era5_static(lon_slice,lat_slice,t1,t2):
+def load_era5_static(lon_slice,lat_slice,t1,t2,chunks="auto"):
 
     '''
     For ERA5, load static variables using the first time step of the period.
@@ -148,19 +150,19 @@ def load_era5_static(lon_slice,lat_slice,t1,t2):
     times = [str(t1) + "-" + t2.strftime("%Y%m%d") for t1,t2 in zip(time_starts,time_ends)]
 
     #times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
-    orog = data_catalog.search(variable="z",product="era5-reanalysis",time_range=times,levtype="sfc").to_dask()
+    orog = data_catalog.search(variable="z",product="era5-reanalysis",time_range=times,levtype="sfc").to_dask(cdf_kwargs={"chunks":chunks})
     orog = orog.isel(latitude=slice(None,None,-1))
     orog["longitude"] = (orog.longitude % 360)
     orog = orog.sortby("longitude")    
     orog = orog.rename({"longitude":"lon","latitude":"lat"}).sel(lon=lon_slice, lat=lat_slice).isel(time=0)
 
-    lsm = data_catalog.search(variable="lsm",product="era5-reanalysis",time_range=times).to_dask()
+    lsm = data_catalog.search(variable="lsm",product="era5-reanalysis",time_range=times).to_dask(cdf_kwargs={"chunks":chunks})
     lsm = lsm.isel(latitude=slice(None,None,-1))
     lsm["longitude"] = (lsm.longitude % 360)
     lsm = lsm.sortby("longitude")
     lsm = lsm.rename({"longitude":"lon","latitude":"lat"}).sel(lon=lon_slice, lat=lat_slice).isel(time=0)
 
-    cl = data_catalog.search(variable="cl",product="era5-reanalysis",time_range=times).to_dask()
+    cl = data_catalog.search(variable="cl",product="era5-reanalysis",time_range=times).to_dask(cdf_kwargs={"chunks":chunks})
     cl = cl.isel(latitude=slice(None,None,-1))
     cl["longitude"] = (cl.longitude % 360)
     cl = cl.sortby("longitude")
@@ -185,6 +187,9 @@ def load_era5_ml(path,t1,t2,lat_slice,lon_slice,chunks={"time":"auto","hybrid":-
     lat_slice: a slice to restrict lat domain
     lon_slice: a slice to restrict lon domain    
     '''
+
+    if ("lat" in chunks.keys()) | ("lon" in chunks.keys()):
+        print("WARNING: LAT OR LON IN CHUNKS IS BEING IGNORED, SHOULD BE LATITUDE OR LONGITUDE...")
 
     #Load data from disk
     f = xr.open_dataset(path,chunks=chunks)
@@ -421,9 +426,42 @@ def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hg
         ds = xr.open_mfdataset(fnames, chunks=chunks).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
         if hgt_slice is not None:
             ds = ds.sel(lev=hgt_slice)
-        out[vname] = ds
+        out[vname] = ds[vname]
 
     return out
+
+def round_times(ds_dict,freq):
+    
+    """
+    For a dictionary of datasets, round the time coordinate to the nearst freq
+
+    Example: aus2200 time values are sometimes very slightly displaced from a 10-minute time step
+    """
+
+    for key in ds_dict.keys():
+        #Round the time stamps so that they are easier to work with
+        if freq in ["1hrPlev","1hr"]:
+            ds_dict[key]["time"] = ds_dict[key].time.dt.round("1h")
+        elif freq in ["10min"]:
+            ds_dict[key]["time"] = ds_dict[key].time.dt.round("10min")
+        else:
+            raise Exception("Not sure of the time frequency to round to")
+        
+    return ds_dict
+
+def interp_times(ds_dict,interp_times,method="linear",lower_bound=None):
+
+    """
+    For a dictionary of datasets, interpolate in time.
+    If a lower bound is given, then extrapolation is not allowed below this
+    """
+        
+    for key in ds_dict.keys():
+        ds_dict[key] = ds_dict[key].interp(coords={"time":interp_times},method=method,kwargs={"fill_value":"extrapolate"})
+        if lower_bound is not None:
+            ds_dict[key] = xr.where(ds_dict[key] < lower_bound, lower_bound, ds_dict[key])
+        
+    return ds_dict
 
 def destagger_aus2200(ds_dict,destag_list,interp_to=None,lsm=None):
 
@@ -450,10 +488,45 @@ def destagger_aus2200(ds_dict,destag_list,interp_to=None,lsm=None):
 
     for vars in destag_list:
         if interp_to is not None:
-            ds_dict[vars] = ds_dict[vars].interp_like(ds_dict[interp_to],method="linear")
+            ds_dict[vars] = ds_dict[vars].interp({"lon":ds_dict[interp_to].lon,"lat":ds_dict[interp_to].lat},method="linear")
         elif lsm is not None:
-            ds_dict[vars] = ds_dict[vars].interp_like(lsm,method="linear")
+            ds_dict[vars] = ds_dict[vars].interp({"lon":lsm.lon,"lat":lsm.lat},method="linear")
         else:
             raise Exception("Need to input either a variable to interp to, or a land sea mask, to get spatial info")
         
     return ds_dict
+
+def destagger_aus2200_xesmf(ds_dict,destag_list,interp_to=None,lsm=None):
+
+    """
+    
+    From a dictionary of aus2200 datasets (output from load_aus2200_variable), destagger variables in destag_list by using xesmf regridding
+    
+    ## Input
+    * ds_dict: a dictionary of aus2200 xarray datasets. output from load_aus2200_variable()
+
+    * destag_list: list of variables to destagger
+
+    * interp_to: variable for which to use spatial info to interp onto
+
+    * lsm: land sea mask dataset to interp on to
+
+    ## Output
+    a dictionary of datasets with destaggered variables
+
+    ## Example
+    destagger_aus2200(ds_dict, ["uas","vas"], "hus")
+
+    """
+
+    for vars in destag_list:
+        if interp_to is not None:
+            regridder = xe.Regridder(ds_dict[vars], ds_dict[interp_to], "bilinear")
+            ds_dict[vars] = regridder(ds_dict[vars])
+        elif lsm is not None:
+            regridder = xe.Regridder(ds_dict[vars], lsm, "bilinear")
+            ds_dict[vars] = regridder(ds_dict[vars])
+        else:
+            raise Exception("Need to input either a variable to interp to, or a land sea mask, to get spatial info")
+        
+    return ds_dict    
