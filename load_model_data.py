@@ -327,7 +327,7 @@ def load_barra_variable(vnames, t1, t2, domain_id, freq, lat_slice, lon_slice, c
 
     data_catalog = get_intake_cat()
     times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
-    out = dict.fromkeys(vnames)
+    out = []
     for vname in vnames:
         ds = data_catalog.search(
             variable_id=vname,
@@ -336,7 +336,7 @@ def load_barra_variable(vnames, t1, t2, domain_id, freq, lat_slice, lon_slice, c
             start_time=times)\
                 .to_dask(cdf_kwargs={"chunks":chunks}).\
                     sel(lon=lon_slice, lat=lat_slice, time=slice(t1,t2))
-        out[vname] = ds
+        out.append(ds[vname])
         
     return out
 
@@ -355,20 +355,20 @@ def load_barra_static(domain_id,lon_slice,lat_slice):
 
     return orog.orog, (lsm.sftlf >= 0.5) * 1
 
-def barra_sfc_moisture(barra_vars):
+def barra_sfc_moisture(huss,ps,tas):
 
     """
     From a dict of BARRA variables, calculate specific humidity, dewpoint, and theta-e
     Assumes barra_vars contains "huss", "ps", and "tas"
     """
 
-    barra_vars["q"] = mpcalc.mixing_ratio_from_specific_humidity(barra_vars["huss"]["huss"])
-    barra_vars["dp"] = mpcalc.dewpoint_from_specific_humidity(barra_vars["ps"]["ps"], barra_vars["tas"]["tas"], barra_vars["huss"]["huss"])
-    barra_vars["thetae"] = mpcalc.equivalent_potential_temperature(barra_vars["ps"]["ps"], barra_vars["tas"]["tas"], barra_vars["dp"])
+    q = mpcalc.mixing_ratio_from_specific_humidity(huss)
+    dp = mpcalc.dewpoint_from_specific_humidity(ps, tas, huss)
+    thetae = mpcalc.equivalent_potential_temperature(ps, tas, dp)
 
-    return barra_vars
+    return q, dp, thetae
 
-def load_aus2200_static(exp_id,lon_slice,lat_slice):
+def load_aus2200_static(exp_id,lon_slice,lat_slice,chunks="auto"):
 
     '''
     Load static fields for the mjo-enso AUS2200 experiment, stored on the ua8 project
@@ -383,9 +383,9 @@ def load_aus2200_static(exp_id,lon_slice,lat_slice):
 
     assert exp_id in ['mjo-elnino', 'mjo-lanina', 'mjo-neutral'], "exp_id must either be 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'"
     
-    orog = xr.open_dataset("/g/data/ua8/AUS2200/"+exp_id+"/v1-0/fx/orog/orog_AUS2200_"+exp_id+"_fx.nc").\
+    orog = xr.open_dataset("/g/data/ua8/AUS2200/"+exp_id+"/v1-0/fx/orog/orog_AUS2200_"+exp_id+"_fx.nc",chunks=chunks).\
             sel(lat=lat_slice,lon=lon_slice)
-    lsm = xr.open_dataset("/g/data/ua8/AUS2200/"+exp_id+"/v1-0/fx/lmask/lmask_AUS2200_"+exp_id+"_fx.nc").\
+    lsm = xr.open_dataset("/g/data/ua8/AUS2200/"+exp_id+"/v1-0/fx/lmask/lmask_AUS2200_"+exp_id+"_fx.nc",chunks=chunks).\
             sel(lat=lat_slice,lon=lon_slice)
 
     return orog.orog, ((lsm.lmask==100)*1)
@@ -419,35 +419,36 @@ def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hg
     assert exp_id in ['mjo-elnino', 'mjo-lanina', 'mjo-neutral'], "exp_id must either be 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'"
     assert freq in ["10min", "1hr", "1hrPlev"], "exp_id must either be '10min', '1hr', '1hrPlev'"
 
-    out = dict.fromkeys(vnames)
+    #out = dict.fromkeys(vnames)
+    out = []
     for vname in vnames:
 
         fnames = "/g/data/ua8/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200_"+exp_id+"_*.nc"
         ds = xr.open_mfdataset(fnames, chunks=chunks).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
         if hgt_slice is not None:
             ds = ds.sel(lev=hgt_slice)
-        out[vname] = ds[vname]
+        #out[vname] = ds[vname]
+        out.append(ds[vname])
 
     return out
 
-def round_times(ds_dict,freq):
+def round_times(ds,freq):
     
     """
-    For a dictionary of datasets, round the time coordinate to the nearst freq
+    For dataarray, round the time coordinate to the nearst freq
 
     Example: aus2200 time values are sometimes very slightly displaced from a 10-minute time step
     """
 
-    for key in ds_dict.keys():
-        #Round the time stamps so that they are easier to work with
-        if freq in ["1hrPlev","1hr"]:
-            ds_dict[key]["time"] = ds_dict[key].time.dt.round("1h")
-        elif freq in ["10min"]:
-            ds_dict[key]["time"] = ds_dict[key].time.dt.round("10min")
-        else:
-            raise Exception("Not sure of the time frequency to round to")
-        
-    return ds_dict
+    #Round the time stamps so that they are easier to work with
+    if freq in ["1hrPlev","1hr"]:
+        ds["time"] = ds.time.dt.round("1h")
+    elif freq in ["10min"]:
+        ds["time"] = ds.time.dt.round("10min")
+    else:
+        raise Exception("Not sure of the time frequency to round to")
+
+    return ds
 
 def interp_times(ds_dict,interp_times,method="linear",lower_bound=None):
 

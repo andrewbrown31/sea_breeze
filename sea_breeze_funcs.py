@@ -1,4 +1,4 @@
-from working.sea_breeze.coastline_funcs import rotate_u_v_coast, latlon_dist
+from sea_breeze.coastline_funcs import rotate_u_v_coast, latlon_dist
 import numpy as np
 import xarray as xr
 import metpy.calc as mpcalc
@@ -23,13 +23,143 @@ def load_angle_ds(path,lat_slice,lon_slice,chunks="auto"):
     """
     return xr.open_dataset(path,chunks=chunks).sel(lat=lat_slice,lon=lon_slice)
 
-def single_col_circulation(wind_ds,
+def calc_sbi(wind_ds,
                     angle_ds,
                     subtract_mean=False,
                     height_mean=True,
                     blh_da=None,
                     alpha_height=0,
                     sb_heights=[500,2000],
+                    mean_heights=[0,4500],
+                    height_method="blh",
+                    blh_rolling=0,
+                    vert_coord="height"):
+
+    '''
+    Take a xarray dataset of u and v winds, as well as a dataset of coastline angles, and apply the algorithm of Hallgren et al. (2023) to compute the sea breeze index via a single-column method.
+
+    ### Input
+    * wind_ds: An xarray dataset with "u" and "v" wind component variables, and a vertical coordinate "height" in metres
+
+    * angle_ds: An xarray dataset of coastline orientation angles (degrees from N) 
+
+    * subtract_mean: Boolean option for whether to subtract the mean background wind, and calculate perturbation sbi and lbi. Currently using an arithmatic mean over mean_heights layer
+
+    * height_mean: Boolean option to control subtract_mean method. If true, subtract the height mean over mean_heights. Otherwise, subtract the daily mean
+
+    * mean_heights: Array of size (2) that describes the bounds used to mean wind layer. Used if subtract_mean=True
+
+    * blh_da: An xarray dataarray with boundary layer heights, also in m. Used if height_method="blh" to define heights to look for sea/land breezes.
+
+    * alpha_height: Height level in m to define the "low-level" wind
+
+    * sb_heights: Array of size (2) that describes the bounds used to define the upper level sea breeze height. Used if height_method="static"
+
+    * lb_heights: Array of size (2) that describes the bounds used to define the upper level land breeze height. Used if height_method="static"
+
+    * height_method: String used to choose the method for selecting upper level heights to define a circulation. Either "static" or "blh". "static" uses static height limits defined by lb_heights/sb_heights, blh uses the blh_ds.
+
+    * blh_rolling: Integer used to define the number of rolling time windows over which to take the maximum. If zero then no rolling max is taken.
+
+    ### Output
+    * xarray dataset with sbi
+    '''
+
+    #TODO
+    #Check how this looks in different situations (e.g. for a front)
+
+    #Subtract the mean wind. Define mean as the mean over mean_heights m level, or the daily mean
+    if subtract_mean:
+        if height_mean:
+            u_mean, v_mean = vert_mean_wind(wind_ds,mean_heights,vert_coord)
+        else:
+            u_mean, v_mean = daily_mean_wind(wind_ds)
+        wind_ds["u"] = wind_ds["u"] - u_mean
+        wind_ds["v"] = wind_ds["v"] - v_mean
+
+    #Convert coastline orientation angle to the angle perpendicular to the coastline (pointing away from coast. from north)
+    theta = (((angle_ds.angle_interp+180)%360-90)%360)
+
+    #Calculate wind directions (from N) for low level (alpha) and all levels (beta)
+    alpha = (90 - np.rad2deg(np.arctan2(
+        -wind_ds["v"].sel(height=alpha_height,method="nearest"),
+        -wind_ds["u"].sel(height=alpha_height,method="nearest")))) % 360
+    beta = (90 - np.rad2deg(np.arctan2(
+        -wind_ds["v"], 
+        -wind_ds["u"]))) % 360
+    wind_ds["alpha"] = alpha
+    wind_ds["beta"] = beta
+
+    #Calculate the sea breeze and land breeze indices
+    sbi = np.cos(np.deg2rad((wind_ds.alpha - theta))) * \
+            np.cos(np.deg2rad(wind_ds.alpha + 180 - wind_ds.beta))
+
+    #Mask to zero everywhere except for the following conditions
+    sb_cond = ( (np.cos(np.deg2rad((wind_ds.alpha - theta)))>0), #Low level flow onshore
+            (np.cos(np.deg2rad(wind_ds.beta - (theta+180)))>0), #Upper level flow offshore
+            (np.cos(np.deg2rad(wind_ds.alpha + 180 - wind_ds.beta))>0) #Upper level flow opposing
+                  )
+    sbi = xr.where(sb_cond[0] & sb_cond[1] & sb_cond[2], sbi, 0)
+
+    #Return the max over some height. Either defined statically or boundary layer height
+    #_,_,_,hh = np.meshgrid(wind_ds.time,wind_ds.lat,wind_ds.lon,wind_ds.height)
+    _,_,_,hh = da.meshgrid(
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[0]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[0]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[1]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[1]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[2]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[2]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[3]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[3]][0]}), indexing="ij")
+    wind_ds["height_var"] = (wind_ds.u.dims,hh)
+    if height_method=="static":
+        sbi = xr.where((sbi.height >= sb_heights[0]) & (sbi.height <= sb_heights[1]),sbi,0)
+    elif height_method=="blh":
+        if blh_rolling > 0:
+            blh_da = blh_da.rolling({"time":blh_rolling}).max()
+        sbi = xr.where((wind_ds.height_var <= blh_da),sbi,0)
+    else:
+        raise ValueError("Invalid height method")
+
+    #TODO: Currently this code below doesn't work well in xarray with dask. I think it is idxmax
+    # that forces computation and rechunking. Need to revisit this to make efficient    
+    #Calculate the following characteristics of the circulation identified by this method
+    # #Min height where sbi>0 (bottom of return flow)
+    # sbi_h_min = xr.where(sbi>0, wind_ds["height_var"], np.nan).min("height")
+    # #Max height where sbi>0 (top of return flow)
+    # sbi_h_max = xr.where(sbi>0, wind_ds["height_var"], np.nan).max("height")
+    # #Height of max sbi (where the return flow most opposes the low level flow)
+    # sbi_max_inds = sbi.idxmax(dim="height").chunk({"time":sbi.chunksizes["time"][0]})
+    # sbi_max_h = xr.where(sbi>0, wind_ds["height_var"], np.nan).sel(height=sbi_max_inds)
+
+    # #Same but for the lbi
+    # lbi_h_min = xr.where(lbi>0, wind_ds["height_var"], np.nan).min("height")
+    # lbi_h_max = xr.where(lbi>0, wind_ds["height_var"], np.nan).max("height")
+    # lbi_max_inds = lbi.idxmax(dim="height").chunk({"time":sbi.chunksizes["time"][0]})
+    # lbi_max_h = xr.where(lbi>0, wind_ds["height_var"], np.nan).sel(height=lbi_max_inds)
+
+    #Compute each index as the max in the column
+    sbi = sbi.max("height")
+
+    #Dataset output
+    # sbi_ds = xr.Dataset({
+    #     "sbi":sbi,
+    #     "sbi_h_min":sbi_h_min,
+    #     "sbi_h_max":sbi_h_max,
+    #     "sbi_max_h":sbi_max_h.drop_vars("height"),
+    #     "lbi":lbi,
+    #     "lbi_h_max":lbi_h_max,
+    #     "lbi_h_min":lbi_h_min,
+    #     "lbi_max_h":lbi_max_h.drop_vars("height")
+    # }
+    # )
+    sbi_ds = xr.Dataset({"sbi":sbi})        
+
+    return sbi_ds
+
+def calc_lbi(wind_ds,
+                    angle_ds,
+                    subtract_mean=False,
+                    height_mean=True,
+                    blh_da=None,
+                    alpha_height=0,
                     lb_heights=[100,900],
                     mean_heights=[0,4500],
                     height_method="blh",
@@ -37,7 +167,7 @@ def single_col_circulation(wind_ds,
                     vert_coord="height"):
 
     '''
-    Take a xarray dataset of u and v winds, as well as a dataset of coastline angles, and apply the algorithm of Hallgren et al. (2023) to compute the sea breeze and land breeze indices via a single-column method.
+    Take a xarray dataset of u and v winds, as well as a dataset of coastline angles, and apply the algorithm of Hallgren et al. (2023) to compute the land breeze index via a single-column method.
 
     ### Input
     * wind_ds: An xarray dataset with "u" and "v" wind component variables, and a vertical coordinate "height" in metres
@@ -92,21 +222,14 @@ def single_col_circulation(wind_ds,
     wind_ds["beta"] = beta
 
     #Calculate the sea breeze and land breeze indices
-    sbi = np.cos(np.deg2rad((wind_ds.alpha - theta))) * \
-            np.cos(np.deg2rad(wind_ds.alpha + 180 - wind_ds.beta))
     lbi = -np.cos(np.deg2rad((wind_ds.alpha - theta))) * \
             np.cos(np.deg2rad(wind_ds.alpha + 180 - wind_ds.beta))
 
     #Mask to zero everywhere except for the following conditions
-    sb_cond = ( (np.cos(np.deg2rad((wind_ds.alpha - theta)))>0), #Low level flow onshore
-            (np.cos(np.deg2rad(wind_ds.beta - (theta+180)))>0), #Upper level flow offshore
-            (np.cos(np.deg2rad(wind_ds.alpha + 180 - wind_ds.beta))>0) #Upper level flow opposing
-                  )
     lb_cond = ( (np.cos(np.deg2rad((wind_ds.alpha - (theta+180))))>0), #Low level flow offshore
         (np.cos(np.deg2rad(wind_ds.beta - theta))>0), #Upper level flow onshore
         (np.cos(np.deg2rad(wind_ds.alpha + 180 - wind_ds.beta))>0) #Upper level flow opposing
               )
-    sbi = xr.where(sb_cond[0] & sb_cond[1] & sb_cond[2], sbi, 0)
     lbi = xr.where(lb_cond[0] & lb_cond[1] & lb_cond[2], lbi, 0)
 
     #Return the max over some height. Either defined statically or boundary layer height
@@ -118,12 +241,10 @@ def single_col_circulation(wind_ds,
         da.rechunk(da.array(wind_ds[wind_ds.u.dims[3]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[3]][0]}), indexing="ij")
     wind_ds["height_var"] = (wind_ds.u.dims,hh)
     if height_method=="static":
-        sbi = xr.where((sbi.height >= sb_heights[0]) & (sbi.height <= sb_heights[1]),sbi,0)
         lbi = xr.where((lbi.height >= lb_heights[0]) & (lbi.height <= lb_heights[1]),lbi,0)
     elif height_method=="blh":
         if blh_rolling > 0:
             blh_da = blh_da.rolling({"time":blh_rolling}).max()
-        sbi = xr.where((wind_ds.height_var <= blh_da),sbi,0)
         lbi = xr.where((wind_ds.height_var <= blh_da),lbi,0)
     else:
         raise ValueError("Invalid height method")
@@ -146,7 +267,6 @@ def single_col_circulation(wind_ds,
     # lbi_max_h = xr.where(lbi>0, wind_ds["height_var"], np.nan).sel(height=lbi_max_inds)
 
     #Compute each index as the max in the column
-    sbi = sbi.max("height")
     lbi = lbi.max("height")
 
     #Dataset output
@@ -161,11 +281,7 @@ def single_col_circulation(wind_ds,
     #     "lbi_max_h":lbi_max_h.drop_vars("height")
     # }
     # )
-    sbi_ds = xr.Dataset({
-        "sbi":sbi,
-        "lbi":lbi
-    }
-    )        
+    sbi_ds = xr.Dataset({"lbi":lbi})        
 
     return sbi_ds
 
@@ -244,10 +360,10 @@ def kinematic_frontogenesis(q,u,v):
     dx, dy = mpcalc.lat_lon_grid_deltas(x,y)
 
     #Convert the x and y grid spacing arrays into xarray datasets. Need to interpolate to match the original grid
-    dx = xr.DataArray(np.array(dx),dims=["lon","lat"],coords={"lat":q.lat.values[0:-1], "lon":q.lon.values}).\
+    dx = xr.DataArray(np.array(dx),dims=["lat","lon"],coords={"lat":q.lat.values, "lon":q.lon.values[0:-1]}).\
             interp({"lon":q.lon,"lat":q.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
             chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})
-    dy = xr.DataArray(np.array(dy),dims=["lon","lat"],coords={"lat":q.lat.values, "lon":q.lon.values[0:-1]}).\
+    dy = xr.DataArray(np.array(dy),dims=["lat","lon"],coords={"lat":q.lat.values[0:-1], "lon":q.lon.values}).\
             interp({"lon":q.lon,"lat":q.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
             chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})
 
@@ -366,12 +482,12 @@ def coast_relative_frontogenesis(q,u,v,angle_ds):
     dx, dy = mpcalc.lat_lon_grid_deltas(x,y)
 
     #Convert the x and y grid spacing arrays into xarray datasets. Need to interpolate to match the original grid
-    dx = xr.DataArray(np.array(dx),dims=["lon","lat"],coords={"lat":q.lat.values[0:-1], "lon":q.lon.values}).\
+    dx = xr.DataArray(np.array(dx),dims=["lat","lon"],coords={"lat":q.lat.values, "lon":q.lon.values[0:-1]}).\
             interp({"lon":q.lon,"lat":q.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
             chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})
-    dy = xr.DataArray(np.array(dy),dims=["lon","lat"],coords={"lat":q.lat.values, "lon":q.lon.values[0:-1]}).\
+    dy = xr.DataArray(np.array(dy),dims=["lat","lon"],coords={"lat":q.lat.values[0:-1], "lon":q.lon.values}).\
             interp({"lon":q.lon,"lat":q.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
-            chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})    
+            chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})
 
     #Define angle of coastline orientation from N
     theta=angle_ds.angle_interp 
