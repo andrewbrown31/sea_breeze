@@ -419,7 +419,6 @@ def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hg
     assert exp_id in ['mjo-elnino', 'mjo-lanina', 'mjo-neutral'], "exp_id must either be 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'"
     assert freq in ["10min", "1hr", "1hrPlev"], "exp_id must either be '10min', '1hr', '1hrPlev'"
 
-    #out = dict.fromkeys(vnames)
     out = []
     for vname in vnames:
 
@@ -427,7 +426,6 @@ def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hg
         ds = xr.open_mfdataset(fnames, chunks=chunks).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
         if hgt_slice is not None:
             ds = ds.sel(lev=hgt_slice)
-        #out[vname] = ds[vname]
         out.append(ds[vname])
 
     return out
@@ -450,19 +448,18 @@ def round_times(ds,freq):
 
     return ds
 
-def interp_times(ds_dict,interp_times,method="linear",lower_bound=None):
+def interp_times(da,interp_times,method="linear",lower_bound=None):
 
     """
-    For a dictionary of datasets, interpolate in time.
+    For a dataarray, interpolate in time.
     If a lower bound is given, then extrapolation is not allowed below this
     """
         
-    for key in ds_dict.keys():
-        ds_dict[key] = ds_dict[key].interp(coords={"time":interp_times},method=method,kwargs={"fill_value":"extrapolate"})
-        if lower_bound is not None:
-            ds_dict[key] = xr.where(ds_dict[key] < lower_bound, lower_bound, ds_dict[key])
+    da = da.interp(coords={"time":interp_times},method=method,kwargs={"fill_value":"extrapolate"})
+    if lower_bound is not None:
+        da = xr.where(da < lower_bound, lower_bound, da)
         
-    return ds_dict
+    return da
 
 def destagger_aus2200(ds_dict,destag_list,interp_to=None,lsm=None):
 

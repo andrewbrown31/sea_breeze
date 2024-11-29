@@ -82,8 +82,8 @@ def calc_sbi(wind_ds,
 
     #Calculate wind directions (from N) for low level (alpha) and all levels (beta)
     alpha = (90 - np.rad2deg(np.arctan2(
-        -wind_ds["v"].sel(height=alpha_height,method="nearest"),
-        -wind_ds["u"].sel(height=alpha_height,method="nearest")))) % 360
+        -wind_ds["v"].sel({vert_coord:alpha_height},method="nearest"),
+        -wind_ds["u"].sel({vert_coord:alpha_height},method="nearest")))) % 360
     beta = (90 - np.rad2deg(np.arctan2(
         -wind_ds["v"], 
         -wind_ds["u"]))) % 360
@@ -110,7 +110,7 @@ def calc_sbi(wind_ds,
         da.rechunk(da.array(wind_ds[wind_ds.u.dims[3]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[3]][0]}), indexing="ij")
     wind_ds["height_var"] = (wind_ds.u.dims,hh)
     if height_method=="static":
-        sbi = xr.where((sbi.height >= sb_heights[0]) & (sbi.height <= sb_heights[1]),sbi,0)
+        sbi = xr.where((sbi[vert_coord] >= sb_heights[0]) & (sbi[vert_coord] <= sb_heights[1]),sbi,0)
     elif height_method=="blh":
         if blh_rolling > 0:
             blh_da = blh_da.rolling({"time":blh_rolling}).max()
@@ -136,7 +136,7 @@ def calc_sbi(wind_ds,
     # lbi_max_h = xr.where(lbi>0, wind_ds["height_var"], np.nan).sel(height=lbi_max_inds)
 
     #Compute each index as the max in the column
-    sbi = sbi.max("height")
+    sbi = sbi.max(vert_coord)
 
     #Dataset output
     # sbi_ds = xr.Dataset({
@@ -561,7 +561,7 @@ def vert_mean_wind(wind_ds,mean_heights,vert_coord):
     u_mean = wind_ds["u"].sel({vert_coord:slice(mean_heights[0],mean_heights[1])}).mean(vert_coord)
     v_mean = wind_ds["v"].sel({vert_coord:slice(mean_heights[0],mean_heights[1])}).mean(vert_coord)
 
-    return u_mean.persist(), v_mean.persist()
+    return u_mean, v_mean
 
 def daily_mean_wind(wind_ds):
 
