@@ -393,7 +393,7 @@ def load_aus2200_static(exp_id,lon_slice,lat_slice,chunks="auto"):
 def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto"):
 
     '''
-    Load static fields for the mjo-enso AUS2200 experiment, stored on the ua8 project
+    Load variables from the mjo-enso AUS2200 experiment, stored on the ua8 project
 
     ## Input
 
@@ -416,18 +416,36 @@ def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hg
     * chunks: dict describing the number of chunks. see xr.open_dataset
     '''
 
+    #This code makes sure the inputs for experiment id and time frequency match what is on disk 
     assert exp_id in ['mjo-elnino', 'mjo-lanina', 'mjo-neutral'], "exp_id must either be 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'"
     assert freq in ["10min", "1hr", "1hrPlev"], "exp_id must either be '10min', '1hr', '1hrPlev'"
 
+    #We are loading a list of files from disk using xr.open_mfdataset. This preprocessing 
+    # just slices the lats, lons and levels we are interested in for each file, which is more efficient
+    def _preprocess(ds):
+        ds = ds.sel(lat=lat_slice,lon=lon_slice)
+        return ds
+    def _preprocess_hgt(ds):
+            ds = ds.sel(lat=lat_slice,lon=lon_slice,lev=hgt_slice)
+            return ds    
+    
     out = []
     for vname in vnames:
-
         fnames = "/g/data/ua8/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200_"+exp_id+"_*.nc"
-        ds = xr.open_mfdataset(fnames, chunks=chunks).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
         if hgt_slice is not None:
-            ds = ds.sel(lev=hgt_slice)
+            ds = xr.open_mfdataset(fnames, 
+                                   chunks=chunks, 
+                                   parallel=True, 
+                                   preprocess=_preprocess_hgt, 
+                                   engine="h5netcdf").sel(time=slice(t1,t2))
+        else:
+            ds = xr.open_mfdataset(fnames,
+                                   chunks=chunks,
+                                   parallel=True,
+                                   preprocess=_preprocess,
+                                   engine="h5netcdf").sel(time=slice(t1,t2))
         out.append(ds[vname])
-
+        
     return out
 
 def round_times(ds,freq):
@@ -528,3 +546,37 @@ def destagger_aus2200_xesmf(ds_dict,destag_list,interp_to=None,lsm=None):
             raise Exception("Need to input either a variable to interp to, or a land sea mask, to get spatial info")
         
     return ds_dict    
+
+
+def aus2200_rolling_daily_mean(t1,t2,lat_slice,lon_slice,exp_id,freq,dx=0.022,chunks={"lat":-1,"lon":-1}):
+
+    
+    u_lon_slice=slice(lon_slice.start,lon_slice.stop+dx)
+    v_lat_slice=slice(lat_slice.start,lat_slice.stop+dx)
+
+    #Load model level wind data for the sea breeze index
+    aus2200_ua = load_aus2200_variable(["ua"],t1,t2,exp_id,u_lon_slice,lat_slice,freq,hgt_slice=slice(0,5000),
+                                    chunks=(chunks))[0]
+    aus2200_va = load_aus2200_variable(["va"],t1,t2,exp_id,lon_slice,v_lat_slice,freq,hgt_slice=slice(0,5000),
+                                    chunks=(chunks))[0]
+    
+    #Destagger the U and V winds
+    _, lsm = load_aus2200_static(exp_id,lon_slice,lat_slice)
+    aus2200_va = (aus2200_va.isel(lat=slice(0,-1)).assign_coords({"lat":lsm.lat}) +
+                    aus2200_va.isel(lat=slice(1,aus2200_va.lat.shape[0])).assign_coords({"lat":lsm.lat})) / 2
+    aus2200_ua = (aus2200_ua.isel(lon=slice(0,-1)).assign_coords({"lon":lsm.lon}) +
+                    aus2200_ua.isel(lon=slice(1,aus2200_ua.lon.shape[0])).assign_coords({"lon":lsm.lon})) / 2    
+
+    #Calculate rolling mean and save     
+    time_window = 24
+    min_periods = 12
+    u_mean = aus2200_ua.\
+                rolling(dim={"time":time_window},center=True,min_periods=min_periods).\
+                mean().persist()
+    u_mean.to_netcdf("/scratch/gb02/ab4502/tmp/u_mean.nc")
+    del u_mean
+    v_mean = aus2200_va.\
+                rolling(dim={"time":time_window},center=True,min_periods=min_periods).\
+                mean().persist()
+    v_mean.to_netcdf("/scratch/gb02/ab4502/tmp/v_mean.nc")
+    del v_mean
