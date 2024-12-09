@@ -4,8 +4,10 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 import metpy.calc as mpcalc
-import metpy.units as units
+from skimage.segmentation import find_boundaries
 import xesmf as xe
+import dask.array as da
+import scipy
 
 def interp_np(x, xp, fp):
     return np.interp(x, xp, fp, right=np.nan)
@@ -216,18 +218,7 @@ def era5_sfc_moisture(era5_vars):
     
     return era5_vars
 
-# def combine_winds(u,v,uname,vname,ws_name):
-
-#     '''
-#     From u and v wind component dataarrays, construct a wind speed dataarray
-#     '''
-
-#     wind_da = xr.Dataset({uname:u[uname],vname:v[vname]})
-#     wind_da[ws_name] = np.sqrt(wind_da[uname]**2 + wind_da[vname]**2)
-
-#     return wind_da
-
-def get_intake_cat():
+def get_intake_cat_barra():
 
     '''
     Return the intake catalog for barra
@@ -249,69 +240,6 @@ def get_intake_cat_era5():
 
     return data_catalog
 
-def load_barra_wind_data(unames, vnames, t1, t2, domain_id, freq, lat_slice, lon_slice, vert_coord, chunks="auto"):
-
-    '''
-    Load BARRA wind components using the intake catalog, and combine either by height (e.g. if combining u100m and u1000m) or pressure (e.g. if combining u1000 and u500).
-    
-    Input
-    * unames: list of u wind component variables to get (e.g. u100m). Must be a corresponding vname and ws_name
-
-    * vnames: list of v wind component variables to get (e.g. v100m). Must be a corresponding uname and ws_name
-
-    * t1: start time in %Y-%m-%d %H:%M"
-
-    * t2: end time in %Y-%m-%d %H:%M"
-
-    * domain_id: for barra, either AUS-04 or AUST-11
-
-    * freq: frequency string (e.g. 1hr)
-
-    * lat_slice: a slice to restrict lat domain
-
-    * lon_slice: a slice to restrict lon domain
-
-    * vert_coord: coordinate to combine wind levels. either height or pressure for BARRA
-    '''
-
-    data_catalog = get_intake_cat()
-    times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
-    #wind_ds_list = []
-    u_ds = []
-    v_ds = []
-    # for uname,vname,wsname in zip(unames,vnames,ws_names):
-    for uname,vname in zip(unames,vnames):
-
-        u_ds.append(data_catalog.search(variable_id=uname,
-                            domain_id=domain_id,
-                            freq=freq,
-                            start_time=times).to_dask(cdf_kwargs={"chunks":chunks}).sel(
-                                lon=lon_slice, lat=lat_slice, time=slice(t1,t2)).rename({uname:"u"}))
-        v_ds.append(data_catalog.search(variable_id=vname,
-                                    domain_id=domain_id,
-                                    freq=freq,
-                                    start_time=times).to_dask(cdf_kwargs={"chunks":chunks}).sel(
-                                        lon=lon_slice, lat=lat_slice, time=slice(t1,t2)).rename({vname:"v"}))        
-        
-    wind_ds = xr.Dataset({
-        "u":xr.combine_nested(u_ds,concat_dim=vert_coord)["u"],
-        "v":xr.combine_nested(v_ds,concat_dim=vert_coord)["v"]})
-        
-
-    #     u_ds = data_catalog.search(variable_id=uname,
-    #                         domain_id=domain_id,
-    #                         freq=freq,
-    #                         start_time=times).to_dask().sel(lon=lon_slice, lat=lat_slice, time=slice(t1,t2))
-    #     v_ds = data_catalog.search(variable_id=vname,
-    #                         domain_id=domain_id,
-    #                         freq=freq,
-    #                         start_time=times).to_dask().sel(lon=lon_slice, lat=lat_slice, time=slice(t1,t2))
-    #     wind_ds_list.append(combine_winds(u_ds,v_ds,uname,vname,wsname)\
-    #                     .chunk({"time":-1,"lat":20,"lon":20}))
-    #wind_ds = xr.merge(wind_ds_list,compat="override")
-    
-    return wind_ds
-
 def load_barra_variable(vnames, t1, t2, domain_id, freq, lat_slice, lon_slice, chunks="auto"):
 
     '''
@@ -325,7 +253,7 @@ def load_barra_variable(vnames, t1, t2, domain_id, freq, lat_slice, lon_slice, c
     chunks: dict describing the number of chunks. see xr.open_dataset
     '''
 
-    data_catalog = get_intake_cat()
+    data_catalog = get_intake_cat_barra()
     times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
     out = []
     for vname in vnames:
@@ -349,7 +277,7 @@ def load_barra_static(domain_id,lon_slice,lat_slice):
     lon_slice: a slice to restrict lon domain
     '''
 
-    data_catalog = get_intake_cat()
+    data_catalog = get_intake_cat_barra()
     orog = data_catalog.search(variable_id="orog",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
     lsm = data_catalog.search(variable_id="sftlf",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
 
@@ -390,14 +318,14 @@ def load_aus2200_static(exp_id,lon_slice,lat_slice,chunks="auto"):
 
     return orog.orog, ((lsm.lmask==100)*1)
 
-def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto"):
+def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022):
 
     '''
     Load variables from the mjo-enso AUS2200 experiment, stored on the ua8 project
 
     ## Input
 
-    * vnames: list of names of aus2200 variables
+    * vnames: names of aus2200 variable to load
 
     * t1: start time in %Y-%m-%d %H:%M"
 
@@ -427,26 +355,52 @@ def load_aus2200_variable(vnames, t1, t2, exp_id, lon_slice, lat_slice, freq, hg
         return ds
     def _preprocess_hgt(ds):
             ds = ds.sel(lat=lat_slice,lon=lon_slice,lev=hgt_slice)
-            return ds    
-    
-    out = []
-    for vname in vnames:
-        fnames = "/g/data/ua8/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200_"+exp_id+"_*.nc"
-        if hgt_slice is not None:
-            ds = xr.open_mfdataset(fnames, 
-                                   chunks=chunks, 
-                                   parallel=True, 
-                                   preprocess=_preprocess_hgt, 
-                                   engine="h5netcdf").sel(time=slice(t1,t2))
+            return ds   
+
+    if staggered is not None:
+        _, lsm = load_aus2200_static(exp_id,lon_slice,lat_slice)
+        if staggered == "lat":
+            lat_slice=slice(lat_slice.start-(dx*0.5),lat_slice.stop+(dx*0.5))
+        elif staggered == "lon":
+            lon_slice=slice(lon_slice.start-(dx*0.5),lon_slice.stop+(dx*0.5))
+        elif staggered == "time":
+            if freq == "10min":
+                time_delta = dt.timedelta(minutes=10)
+                freq_str = freq
+            elif (freq == "1hr") | (freq == "1hrPlev"):
+                time_delta = dt.timedelta(hours=1)
+                freq_str = "1h"
+            unstaggered_times = pd.date_range(t1,t2,freq=freq_str)
+            t1 = pd.to_datetime(t1) - time_delta
+            t2 = pd.to_datetime(t2) + time_delta
         else:
-            ds = xr.open_mfdataset(fnames,
-                                   chunks=chunks,
-                                   parallel=True,
-                                   preprocess=_preprocess,
-                                   engine="h5netcdf").sel(time=slice(t1,t2))
-        out.append(ds[vname])
-        
-    return out
+            raise ValueError("Invalid stagger dim")
+    
+    fnames = "/g/data/ua8/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200_"+exp_id+"_*.nc"
+    if hgt_slice is not None:
+        da = xr.open_mfdataset(fnames, 
+                               chunks=chunks, 
+                               parallel=True, 
+                               preprocess=_preprocess_hgt, 
+                               engine="h5netcdf").sel(time=slice(t1,t2))[vname]
+    else:
+        da = xr.open_mfdataset(fnames,
+                               chunks=chunks,
+                               parallel=True,
+                               preprocess=_preprocess,
+                               engine="h5netcdf").sel(time=slice(t1,t2))[vname]
+    
+    if staggered == "lat":
+        da = (da.isel(lat=slice(0,-1)).assign_coords({"lat":lsm.lat}) +
+                        da.isel(lat=slice(1,da.lat.shape[0])).assign_coords({"lat":lsm.lat})) / 2        
+    if staggered == "lon":
+        da = (da.isel(lon=slice(0,-1)).assign_coords({"lon":lsm.lon}) +
+                       da.isel(lon=slice(1,da.lon.shape[0])).assign_coords({"lon":lsm.lon})) / 2         
+    if staggered == "time":
+        da = (da.isel(time=slice(0,-1)).assign_coords({"time":unstaggered_times}) +\
+                    da.isel(time=slice(1,da.time.shape[0])).assign_coords({"time":unstaggered_times})) / 2
+    
+    return da
 
 def round_times(ds,freq):
     
@@ -512,71 +466,168 @@ def destagger_aus2200(ds_dict,destag_list,interp_to=None,lsm=None):
         
     return ds_dict
 
-def destagger_aus2200_xesmf(ds_dict,destag_list,interp_to=None,lsm=None):
-
+def get_weights(x, p=4, q=4, R=5, slope=-1):
     """
+    Calculate weights for averaging angles between pixels and coastlines
     
-    From a dictionary of aus2200 datasets (output from load_aus2200_variable), destagger variables in destag_list by using xesmf regridding
+    Method:
+    x the distance
+    Let y1 = m1 * (x / R) ** (-p) for x > R.
+    Let y2 = S - m2 * (x / R) ** (q) for x <= R.
+    Equate y1 and y2 and their derivative at x = R to get
+    S = m1 + m2
+    slope = -p * m1 = -q * m2 => m1 = -slope/p and m2 = -slope/q
+    Thus specifying p, q, R, and the function's slope at x=R determines m1, m2 and S.
+
+    # Inputs
+
+    * x: Distance (array like)
+
+    * p: Inverse power to decrease weights after distance R (float)
+
+    * q: Inverse power to decrease weights before distance R (float)
+
+    * R: Distance (in x) to change inverse weighting power from p to q
+
+    * slope: Slpe of function at point R
+
+    From Ewan Short
+    """
+    m1 = -slope/p
+    m2 = -slope/q
+    S = m1 + m2
+    y = da.where(x>R,  m1 * (x / R) ** (-p), S - m2 * (x / R) ** (q))
+    y = da.where(x==0, np.nan, y)
+    return y
+
+def get_coastline_angle_kernel(lsm,R=0.2,coast_dim_chunk_size=10,compute=True,path_to_load=None,save=False,path_to_save=None,lat_slice=None,lon_slice=None):
+
+    '''
+    Ewan's method with help from Jarrah. 
+
+    Also used Dask
     
+    Construct a "kernel" for each coastline point based on the anlgle between that point and all other points in the domain, then take a weighted average.
+
     ## Input
-    * ds_dict: a dictionary of aus2200 xarray datasets. output from load_aus2200_variable()
+    * lsm: xarray dataarray with a binary lsm, and lat lon info
 
-    * destag_list: list of variables to destagger
+    * R: the distance at which the weighting function is changed from 1/p to 1/q. See get_weights function
 
-    * interp_to: variable for which to use spatial info to interp onto
+    * coast_dim_chunk_size: the size of the chunks over the coastline dimension
 
-    * lsm: land sea mask dataset to interp on to
+    * compute: boolean whether or not to actually compute the angles, or just load from disk (in which case path_to_load must be specified)
+
+    * path_to_load: file path to previous output that can be loaded
+
+    * save: boolean - save the angles output?
+
+    * path_to_save: file path to save output
 
     ## Output
-    a dictionary of datasets with destaggered variables
+    * An xarray dataset with an array of coastline angles (0-360 degrees from N) for the labelled coastline array, as well as an array of angle variance as an estimate of how many coastlines are influencing a given point
+    '''
 
-    ## Example
-    destagger_aus2200(ds_dict, ["uas","vas"], "hus")
-
-    """
-
-    for vars in destag_list:
-        if interp_to is not None:
-            regridder = xe.Regridder(ds_dict[vars], ds_dict[interp_to], "bilinear")
-            ds_dict[vars] = regridder(ds_dict[vars])
-        elif lsm is not None:
-            regridder = xe.Regridder(ds_dict[vars], lsm, "bilinear")
-            ds_dict[vars] = regridder(ds_dict[vars])
-        else:
-            raise Exception("Need to input either a variable to interp to, or a land sea mask, to get spatial info")
+    assert np.in1d([0,1],np.unique(lsm)).all(), "Land-sea mask must be binary"
+    if save:
+        if path_to_save is None:
+            raise AttributeError("Saving but no path speficfied")
         
-    return ds_dict    
+    if compute:
 
+        #From the land sea mask define the coastline and a label array
+        coast_label = find_boundaries(lsm)*1
+        land_label = lsm.values
 
-def aus2200_rolling_daily_mean(t1,t2,lat_slice,lon_slice,exp_id,freq,dx=0.022,chunks={"lat":-1,"lon":-1}):
+        #Get lat lon info for domain and coastline, and convert to lower precision
+        lon = lsm.lon.values
+        lat = lsm.lat.values
+        xx,yy = np.meshgrid(lon,lat)
+        xx = xx.astype(np.float16)
+        yy = yy.astype(np.float16)    
 
-    
-    u_lon_slice=slice(lon_slice.start,lon_slice.stop+dx)
-    v_lat_slice=slice(lat_slice.start,lat_slice.stop+dx)
+        #Define coastline x,y indices from the coastline mask
+        xl, yl = np.where(coast_label)
 
-    #Load model level wind data for the sea breeze index
-    aus2200_ua = load_aus2200_variable(["ua"],t1,t2,exp_id,u_lon_slice,lat_slice,freq,hgt_slice=slice(0,5000),
-                                    chunks=(chunks))[0]
-    aus2200_va = load_aus2200_variable(["va"],t1,t2,exp_id,lon_slice,v_lat_slice,freq,hgt_slice=slice(0,5000),
-                                    chunks=(chunks))[0]
-    
-    #Destagger the U and V winds
-    _, lsm = load_aus2200_static(exp_id,lon_slice,lat_slice)
-    aus2200_va = (aus2200_va.isel(lat=slice(0,-1)).assign_coords({"lat":lsm.lat}) +
-                    aus2200_va.isel(lat=slice(1,aus2200_va.lat.shape[0])).assign_coords({"lat":lsm.lat})) / 2
-    aus2200_ua = (aus2200_ua.isel(lon=slice(0,-1)).assign_coords({"lon":lsm.lon}) +
-                    aus2200_ua.isel(lon=slice(1,aus2200_ua.lon.shape[0])).assign_coords({"lon":lsm.lon})) / 2    
+        #Get coastline lat lon vectors
+        yy_t = np.array([yy[xl[t],yl[t]] for t in np.arange(len(yl))])
+        xx_t = np.array([xx[xl[t],yl[t]] for t in np.arange(len(xl))])
 
-    #Calculate rolling mean and save     
-    time_window = 24
-    min_periods = 12
-    u_mean = aus2200_ua.\
-                rolling(dim={"time":time_window},center=True,min_periods=min_periods).\
-                mean().persist()
-    u_mean.to_netcdf("/scratch/gb02/ab4502/tmp/u_mean.nc")
-    del u_mean
-    v_mean = aus2200_va.\
-                rolling(dim={"time":time_window},center=True,min_periods=min_periods).\
-                mean().persist()
-    v_mean.to_netcdf("/scratch/gb02/ab4502/tmp/v_mean.nc")
-    del v_mean
+        #Repeat the 2d lat lon array over a third dimension (corresponding to the coast dim)
+        yy_rep = da.moveaxis(da.stack([da.from_array(yy)]*yl.shape[0],axis=0),0,-1).rechunk({0:-1,1:-1,2:coast_dim_chunk_size})
+        xx_rep = da.moveaxis(da.stack([da.from_array(xx)]*xl.shape[0],axis=0),0,-1).rechunk({0:-1,1:-1,2:coast_dim_chunk_size})
+
+        #Compute the differences in complex space for each coastline points. 
+        stack = (yy_rep - yy_t)*1j + (xx_rep - xx_t)
+        del yy_rep,xx_rep
+        
+        #Reorder to work with the array easier
+        stack = np.moveaxis(stack, -1, 0)
+
+        #Get the real part of the complex numbers
+        stack_abs = da.abs(stack,dtype=np.float32)
+        
+        #Create an inverse distance weighting function
+        weights = get_weights(stack_abs, p=4, q=2, R=R, slope=-1)
+
+        #Take the weighted mean and convert complex numbers to an angle and magnitude
+        print("INFO: Take the weighted mean and convert complex numbers to an angle and magnitude...")
+        mean_angles = da.mean((weights*stack), axis=0).persist()
+        mean_angles.compute()
+        mean_abs = da.abs(mean_angles)
+        mean_angles = da.angle(mean_angles)    
+
+        #Flip the angles inside the coastline for convention, and convert range to 0 to 2*pi
+        mean_angles = da.where(land_label==1,(mean_angles+np.pi) % (2*np.pi),mean_angles % (2*np.pi))
+
+        #Convert angles and magnitude back to complex numbers to do interpolation across the coastline
+        mean_complex = mean_abs * da.exp(1j*mean_angles)
+
+        #Do the interpolation across the coastline
+        print("INFO: Doing interpolation across the coastline...")
+        points = mean_complex.ravel()
+        valid = ~np.isnan(points)
+        points_valid = points[valid]
+        xx_rav, yy_rav = xx.ravel(), yy.ravel()
+        xxv = xx_rav[valid]
+        yyv = yy_rav[valid]
+        interpolated_angles = scipy.interpolate.griddata(np.stack([xxv, yyv]).T, points_valid, (xx, yy), method="linear").reshape(lsm.shape)    
+        
+        #Calculate the weighted circular variance
+        print("INFO: Calculating the sum of the weights...")
+        total_weight = da.sum(weights, axis=0).persist()
+        total_weight.compute()
+        print("INFO: Computing the weighted variance of angles...")
+        weights = weights/total_weight
+        stack = stack / da.abs(stack)
+        variance = (1 - da.abs(da.sum(weights*stack, axis=0))).persist()
+        variance.compute()
+
+        #Reverse the angles for consistency with previous methods, and convert to degrees
+        mean_angles = -da.rad2deg(mean_angles) + 360
+        interpolated_angles = -da.rad2deg(da.angle(interpolated_angles)) % 360
+
+        #Convert to dataarrays
+        angle_da = xr.DataArray(mean_angles,coords={"lat":lat,"lon":lon})
+        interpolated_angle_da = xr.DataArray(interpolated_angles,coords={"lat":lat,"lon":lon})
+        var_da = xr.DataArray(variance,coords={"lat":lat,"lon":lon})
+        coast = xr.DataArray(np.isnan(mean_angles) * 1,coords={"lat":lat,"lon":lon})
+
+        angle_ds =  xr.Dataset({"angle":angle_da,"variance":var_da,"angle_interp":interpolated_angle_da,"coast":coast})
+
+    else:
+
+        if path_to_load is not None:
+            angle_ds = xr.open_dataset(path_to_load)
+            if lat_slice is not None:
+                angle_ds = angle_ds.sel(lat=lat_slice)
+            if lon_slice is not None:
+                angle_ds = angle_ds.sel(lon=lon_slice)
+            save = False
+        else:
+            raise AttributeError("If not computing the angles, path_to_load needs to be specified")
+
+    if save:
+        angle_ds.to_netcdf(path_to_save)
+
+    return angle_ds

@@ -285,7 +285,7 @@ def calc_lbi(wind_ds,
 
     return sbi_ds
 
-def moisture_flux_gradient(q, u, v, angle_ds):
+def moisture_flux_gradient(q, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"):
 
     """
     Calculate d(qu)/dt
@@ -302,6 +302,11 @@ def moisture_flux_gradient(q, u, v, angle_ds):
     ## Output:
     * xarray dataset
     """
+
+    #Rechunk data in one time dim
+    q = q.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    u = u.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    v = v.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
 
     #Convert hus to g/kg 
     q = q * 1000
