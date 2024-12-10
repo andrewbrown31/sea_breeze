@@ -70,6 +70,7 @@ def calc_sbi(wind_ds,
 
     #Subtract the mean wind. Define mean as the mean over mean_heights m level, or the daily mean
     if subtract_mean:
+        print("SUBTRACTING MEAN FROM WINDS FOR SBI CALC...")
         if height_mean:
             u_mean, v_mean = vert_mean_wind(wind_ds,mean_heights,vert_coord)
         else:
@@ -81,28 +82,60 @@ def calc_sbi(wind_ds,
     theta = (((angle_ds.angle_interp+180)%360-90)%360)
 
     #Calculate wind directions (from N) for low level (alpha) and all levels (beta)
-    alpha = (90 - np.rad2deg(np.arctan2(
-        -wind_ds["v"].sel({vert_coord:alpha_height},method="nearest"),
-        -wind_ds["u"].sel({vert_coord:alpha_height},method="nearest")))) % 360
-    beta = (90 - np.rad2deg(np.arctan2(
-        -wind_ds["v"], 
-        -wind_ds["u"]))) % 360
-    wind_ds["alpha"] = alpha
-    wind_ds["beta"] = beta
+    def compute_wind_direction(u, v):
+        return (90 - np.rad2deg(np.arctan2(-v, -u))) % 360
 
-    #Calculate the sea breeze and land breeze indices
-    sbi = np.cos(np.deg2rad((wind_ds.alpha - theta))) * \
-            np.cos(np.deg2rad(wind_ds.alpha + 180 - wind_ds.beta))
+    alpha = xr.apply_ufunc(
+        compute_wind_direction,
+        wind_ds["u"].sel({vert_coord: alpha_height}, method="nearest"),
+        wind_ds["v"].sel({vert_coord: alpha_height}, method="nearest"),
+        dask="parallelized",  # Ensures Dask compatibility
+        output_dtypes=[float],  # Specify output dtype
+    )
+
+    beta = xr.apply_ufunc(
+        compute_wind_direction,
+        wind_ds["u"],
+        wind_ds["v"],
+        dask="parallelized", 
+        output_dtypes=[float],  
+    )            
+
+    #Calculate the sea breeze index
+    def compute_sbi(alpha, beta, theta):
+        return (
+        np.cos(np.deg2rad(alpha - theta)) *
+        np.cos(np.deg2rad(alpha + 180 - beta))
+    )
+    
+    sbi = xr.apply_ufunc(
+        compute_sbi,
+        alpha, 
+        beta,  
+        theta,             
+        dask="parallelized",  
+        output_dtypes=[float],  
+    )        
 
     #Mask to zero everywhere except for the following conditions
-    sb_cond = ( (np.cos(np.deg2rad((wind_ds.alpha - theta)))>0), #Low level flow onshore
-            (np.cos(np.deg2rad(wind_ds.beta - (theta+180)))>0), #Upper level flow offshore
-            (np.cos(np.deg2rad(wind_ds.alpha + 180 - wind_ds.beta))>0) #Upper level flow opposing
+    def sbi_conditions(sbi, alpha, beta, theta):
+        sb_cond = ( (np.cos(np.deg2rad((alpha - theta)))>0), #Low level flow onshore
+            (np.cos(np.deg2rad(beta - (theta+180)))>0), #Upper level flow offshore
+            (np.cos(np.deg2rad(alpha + 180 - beta))>0) #Upper level flow opposing
                   )
-    sbi = xr.where(sb_cond[0] & sb_cond[1] & sb_cond[2], sbi, 0)
+        return xr.where(sb_cond[0] & sb_cond[1] & sb_cond[2], sbi, 0)
+    
+    sbi = xr.apply_ufunc(
+        sbi_conditions,
+        sbi,
+        alpha,  # Alpha from the dataset
+        beta,   # Beta from the dataset
+        theta,             # Theta, could be a scalar or DataArray
+        dask="parallelized",  # Enable Dask compatibility
+        output_dtypes=[int],  # Specify output dtype
+    )        
 
     #Return the max over some height. Either defined statically or boundary layer height
-    #_,_,_,hh = np.meshgrid(wind_ds.time,wind_ds.lat,wind_ds.lon,wind_ds.height)
     _,_,_,hh = da.meshgrid(
         da.rechunk(da.array(wind_ds[wind_ds.u.dims[0]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[0]][0]}),
         da.rechunk(da.array(wind_ds[wind_ds.u.dims[1]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[1]][0]}),
@@ -121,13 +154,13 @@ def calc_sbi(wind_ds,
     #TODO: Currently this code below doesn't work well in xarray with dask. I think it is idxmax
     # that forces computation and rechunking. Need to revisit this to make efficient    
     #Calculate the following characteristics of the circulation identified by this method
-    # #Min height where sbi>0 (bottom of return flow)
-    # sbi_h_min = xr.where(sbi>0, wind_ds["height_var"], np.nan).min("height")
-    # #Max height where sbi>0 (top of return flow)
-    # sbi_h_max = xr.where(sbi>0, wind_ds["height_var"], np.nan).max("height")
-    # #Height of max sbi (where the return flow most opposes the low level flow)
-    # sbi_max_inds = sbi.idxmax(dim="height").chunk({"time":sbi.chunksizes["time"][0]})
-    # sbi_max_h = xr.where(sbi>0, wind_ds["height_var"], np.nan).sel(height=sbi_max_inds)
+    #Min height where sbi>0 (bottom of return flow)
+    sbi_h_min = xr.where(sbi>0, wind_ds["height_var"], np.nan).min("height")
+    #Max height where sbi>0 (top of return flow)
+    sbi_h_max = xr.where(sbi>0, wind_ds["height_var"], np.nan).max("height")
+    #Height of max sbi (where the return flow most opposes the low level flow)
+    sbi_max_inds = sbi.idxmax(dim="height").chunk({"time":sbi.chunksizes["time"][0]})
+    sbi_max_h = xr.where(sbi>0, wind_ds["height_var"], np.nan).sel(height=sbi_max_inds)
 
     # #Same but for the lbi
     # lbi_h_min = xr.where(lbi>0, wind_ds["height_var"], np.nan).min("height")
@@ -138,20 +171,43 @@ def calc_sbi(wind_ds,
     #Compute each index as the max in the column
     sbi = sbi.max(vert_coord)
 
-    #Dataset output
-    # sbi_ds = xr.Dataset({
-    #     "sbi":sbi,
-    #     "sbi_h_min":sbi_h_min,
-    #     "sbi_h_max":sbi_h_max,
-    #     "sbi_max_h":sbi_max_h.drop_vars("height"),
-    #     "lbi":lbi,
-    #     "lbi_h_max":lbi_h_max,
-    #     "lbi_h_min":lbi_h_min,
-    #     "lbi_max_h":lbi_max_h.drop_vars("height")
-    # }
-    # )
-    sbi_ds = xr.Dataset({"sbi":sbi})        
+    #Dataset output and attributes
+    sbi_ds = xr.Dataset({
+        "sbi":sbi,
+        "sbi_h_min":sbi_h_min,
+        "sbi_h_max":sbi_h_max,
+        "sbi_max_h":sbi_max_h.drop_vars("height")})
+    
+    #Set dataset attributes
+    sbi_ds = sbi_ds.assign_attrs(
+        subtract_mean=str(subtract_mean),
+        alpha_height=alpha_height,
+        height_method=height_method,
+        height_mean=str(height_mean)
+    )
+    if height_method=="static":
+        sbi_ds = sbi_ds.assign_attrs(
+            sb_heights=str(sb_heights)
+        )    
 
+    #Set dataarray attributes
+    sbi_ds["sbi"] = sbi_ds["sbi"].assign_attrs(
+        units = "[0,1]",
+        long_name = "Sea breeze index",
+        description = "This index identifies regions where there is an onshore flow at a near-surface level with an opposing, offshore flow aloft in the boundary layer. The SBI is calculated for each vertical layer and then the maximum is taken. Following Hallgren et al. 2023 (10.1175/WAF-D-22-0163.1).")  
+    sbi_ds["sbi_h_min"] = sbi_ds["sbi_h_min"].assign_attrs(
+        units = "m",
+        long_name = "Minimum height where sbi is positive"
+    )
+    sbi_ds["sbi_h_max"] = sbi_ds["sbi_h_max"].assign_attrs(
+            units = "m",
+            long_name = "Maximum height where sbi is positive"
+        )    
+    sbi_ds["sbi_max_h"] = sbi_ds["sbi_max_h"].assign_attrs(
+                units = "m",
+                long_name = "Height of maximum sbi"
+            )        
+    
     return sbi_ds
 
 def calc_lbi(wind_ds,
