@@ -10,8 +10,8 @@ ds = xr.open_zarr(
 )
 
 #Slice down a bit
-t1 = "2024-01-01 06:00"
-t2 = "2024-01-31 23:00"
+t1 = "2016-01-01 06:00"
+t2 = "2016-01-31 23:00"
 ds_sliced = ds.sel(
     time=slice(t1,t2),
     latitude=slice(-5,-45.7),

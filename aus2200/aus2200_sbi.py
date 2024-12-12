@@ -130,12 +130,6 @@ if __name__ == "__main__":
                                 height_method=height_method,
                                 blh_da=aus2200_zmla,
                                 vert_coord="lev")
-    sbi = sbi.assign_attrs(
-        subtract_mean=str(subtract_mean),
-        height_method=height_method,
-        height_mean=str(height_mean),
-        exp_id=exp_id
-    )
 
     #Save output
     out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
@@ -145,5 +139,5 @@ if __name__ == "__main__":
         pass
     else:
         os.mkdir(out_path)   
-    sbi_save = sbi.to_netcdf(out_path+sbi_fname,engine="netcdf4",compute=False)
+    sbi_save = sbi.to_netcdf(out_path+sbi_fname,compute=False)
     progress(sbi_save.persist())
