@@ -382,7 +382,59 @@ def moisture_flux_gradient(q, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"
     #Calculate the rate of change
     dqu_dt = (vprime*q).differentiate("time",datetime_unit="s")
 
-    return dqu_dt    
+    return xr.Dataset({"dqu_dt":dqu_dt})
+
+def hourly_change(q, t, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"):
+
+    """
+    Calculate hourly changes in q, t, and onshore wind speed. Use thresholds on each to define candidate sea breezes 
+
+    ## Input
+    * q: xarray dataarray of specific humidity in kg/kg
+
+    * t: xarray dataarray of air temperature in degrees
+
+    * u: xarray dataarray of u winds in m/s
+
+    * v: xarray dataarray of v winds in m/s
+
+    * angle_ds: xarray dataset containing coastline angles ("angle_interp")
+
+    ## Output:
+    * xarray dataset
+    """
+
+    #Rechunk data in one time dim
+    q = q.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    u = u.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    v = v.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    t = t.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+
+    #Convert hus to g/kg 
+    q = q * 1000
+    
+    #Define angle of coastline orientation from N
+    theta=angle_ds.angle_interp 
+    
+    #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
+    rotated_angle=(((theta)%360-90)%360) + 90   
+    
+    #Define normal angle vectors, pointing onshore
+    cx, cy = [-np.cos(np.deg2rad(rotated_angle)), np.sin(np.deg2rad(rotated_angle))]
+    
+    #Calculate the wind component perpendicular and parallel to the coast by using the normal unit vectors
+    vprime = ((u*cx) + (v*cy))
+
+    #Calculate the rate of change
+    wind_change = vprime.differentiate("time",datetime_unit="h")
+    q_change = q.differentiate("time",datetime_unit="h")
+    t_change = t.differentiate("time",datetime_unit="h")   
+
+    return xr.Dataset(
+        {"wind_change":wind_change.drop_vars("height"),
+         "q_change":q_change,
+         "t_change":t_change.drop_vars("height"),
+            })
 
 def kinematic_frontogenesis(q,u,v):
 
@@ -399,16 +451,6 @@ def kinematic_frontogenesis(q,u,v):
     * u: as above for a u wind component
 
     * v: as above for a v wind component
-
-    * subtract_mean: boolean option for whether to subtract the mean background wind, and calculate frontogenesis using perturbation winds. mean defined by a vertical avg over mean_heights
-
-    * weighted_mean: if true, take the vertical mean weighted by the vertical coordinate 
-
-    * wind_ds: dataset with u and v winds on vertical levels
-
-    * mean_heights: heights between which to average, in unite of vert_coord
-
-    * vert_coord: if wind_ds is being used to take a vertical average, what is the vertical coord
 
     Returns
     * 2d kinematic frontogenesis in units (g/kg) / 100 km / 3h    """
@@ -448,7 +490,9 @@ def kinematic_frontogenesis(q,u,v):
     psi = 0.5 * np.arctan2(shear_def, strch_def)
     beta = np.arcsin((-ddx_q * np.cos(psi) - ddy_q * np.sin(psi)) / mag_dq)
 
-    return 0.5 * mag_dq * (tot_def * np.cos(2 * beta) - div) * 1.08e9
+    F = 0.5 * mag_dq * (tot_def * np.cos(2 * beta) - div) * 1.08e9
+
+    return xr.Dataset({"F":F})
 
 def kinematic_frontogenesis_metpy(q,u,v,subtract_mean=False,weighted_mean=True,wind_ds=None,mean_heights=[0,4500],vert_coord="level"):
 
@@ -593,9 +637,8 @@ def coast_relative_frontogenesis(q,u,v,angle_ds):
     
     #Format for output and calculate the shearing plus confluence
     out =  xr.Dataset({
-        "confluence":xr.DataArray(confluence,coords=q.coords),
-        "shearing":xr.DataArray(shearing,coords=q.coords)})
-    out["total"] = out["shearing"] + out["confluence"]
+        "Fc":xr.DataArray((confluence+shearing) * 1.08e9,coords=q.coords)
+        })
 
     return out
 
