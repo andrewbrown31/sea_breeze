@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #PBS -P gb02 
-#PBS -q hugemem
-#PBS -l walltime=12:00:00,mem=512GB 
+#PBS -q normal
+#PBS -l walltime=12:00:00,mem=190GB 
 #PBS -l ncpus=48
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/barra_c_get_coastline_angles.o 

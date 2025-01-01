@@ -21,7 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("--lon1",default=108,type=float,help="Start longitude")
     parser.add_argument("--lon2",default=-158.5,type=float,help="End longitude")
     parser.add_argument("--hgt1",default=0,type=float,help="Start height to load from disk")
-    parser.add_argument("--hgt2",default=5000,type=float,help="End height to load from disk")    
+    parser.add_argument("--hgt2",default=4500,type=float,help="End height to load from disk")    
     parser.add_argument("-e","--exp_id",default="mjo-elnino",type=str,help="Experiment id for AUS2200 mjo runs")
     parser.add_argument('--subtract_mean',default=False,action=argparse.BooleanOptionalAction,help="Subtract mean to calculate SBI on perturbation winds")
     parser.add_argument("--lev_chunk",default=0,type=int,help="Chunk size for vertical level dim. Default is on-disk chunks")
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200_v3.nc")
+        path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200.nc")
 
     #Calc SBI
     aus2200_wind = xr.Dataset({"u":aus2200_ua,"v":aus2200_va})

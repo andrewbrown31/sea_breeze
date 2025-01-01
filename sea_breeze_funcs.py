@@ -132,16 +132,21 @@ def calc_sbi(wind_ds,
         beta,   # Beta from the dataset
         theta,             # Theta, could be a scalar or DataArray
         dask="parallelized",  # Enable Dask compatibility
-        output_dtypes=[int],  # Specify output dtype
+        output_dtypes=[float],  # Specify output dtype
     )        
 
     #Return the max over some height. Either defined statically or boundary layer height
-    _,_,_,hh = da.meshgrid(
-        da.rechunk(da.array(wind_ds[wind_ds.u.dims[0]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[0]][0]}),
-        da.rechunk(da.array(wind_ds[wind_ds.u.dims[1]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[1]][0]}),
-        da.rechunk(da.array(wind_ds[wind_ds.u.dims[2]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[2]][0]}),
-        da.rechunk(da.array(wind_ds[wind_ds.u.dims[3]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[3]][0]}), indexing="ij")
-    wind_ds["height_var"] = (wind_ds.u.dims,hh)
+    time_dim = wind_ds.u.get_axis_num("time")
+    lat_dim = wind_ds.u.get_axis_num("lat")
+    lon_dim = wind_ds.u.get_axis_num("lon")
+    height_dim = wind_ds.u.get_axis_num(vert_coord)
+    _,hh,_,_ = da.meshgrid(
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[time_dim]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[time_dim]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[height_dim]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[height_dim]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[lat_dim]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[lat_dim]][0]}),
+        da.rechunk(da.array(wind_ds[wind_ds.u.dims[lon_dim]]),chunks={0:wind_ds.u.chunksizes[wind_ds.u.dims[lon_dim]][0]}), indexing="ij")
+    #wind_ds["height_var"] = (wind_ds.u.dims,hh)
+    wind_ds["height_var"] = (("time",vert_coord,"lat","lon"),hh)
     if height_method=="static":
         sbi = xr.where((sbi[vert_coord] >= sb_heights[0]) & (sbi[vert_coord] <= sb_heights[1]),sbi,0)
     elif height_method=="blh":
@@ -155,12 +160,13 @@ def calc_sbi(wind_ds,
     # that forces computation and rechunking. Need to revisit this to make efficient    
     #Calculate the following characteristics of the circulation identified by this method
     #Min height where sbi>0 (bottom of return flow)
-    sbi_h_min = xr.where(sbi>0, wind_ds["height_var"], np.nan).min("height")
+    sbi_h_min = xr.where(sbi>0, wind_ds["height_var"], np.nan).min(vert_coord)
     #Max height where sbi>0 (top of return flow)
-    sbi_h_max = xr.where(sbi>0, wind_ds["height_var"], np.nan).max("height")
+    sbi_h_max = xr.where(sbi>0, wind_ds["height_var"], np.nan).max(vert_coord)
     #Height of max sbi (where the return flow most opposes the low level flow)
-    sbi_max_inds = sbi.idxmax(dim="height").chunk({"time":sbi.chunksizes["time"][0]})
-    sbi_max_h = xr.where(sbi>0, wind_ds["height_var"], np.nan).sel(height=sbi_max_inds)
+    #sbi_max_inds = sbi.idxmax(dim=vert_coord).chunk({"time":sbi.chunksizes["time"][0]})
+    #sbi_max_h = xr.where(sbi>0, wind_ds["height_var"], np.nan).sel({vert_coord:sbi_max_inds})
+    sbi_max_h = sbi.idxmax(dim=vert_coord)
 
     # #Same but for the lbi
     # lbi_h_min = xr.where(lbi>0, wind_ds["height_var"], np.nan).min("height")
@@ -176,7 +182,7 @@ def calc_sbi(wind_ds,
         "sbi":sbi,
         "sbi_h_min":sbi_h_min,
         "sbi_h_max":sbi_h_max,
-        "sbi_max_h":sbi_max_h.drop_vars("height")})
+        "sbi_max_h":sbi_max_h})
     
     #Set dataset attributes
     sbi_ds = sbi_ds.assign_attrs(
@@ -428,12 +434,17 @@ def hourly_change(q, t, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"):
     #Calculate the rate of change
     wind_change = vprime.differentiate("time",datetime_unit="h")
     q_change = q.differentiate("time",datetime_unit="h")
-    t_change = t.differentiate("time",datetime_unit="h")   
+    t_change = t.differentiate("time",datetime_unit="h")  
+
+    if "height" in list(wind_change.coords.keys()):
+        wind_change = wind_change.drop_vars("height")
+    if "height" in list(wind_change.coords.keys()):        
+        t_change = t_change.drop_vars("height")
 
     return xr.Dataset(
-        {"wind_change":wind_change.drop_vars("height"),
+        {"wind_change":wind_change,
          "q_change":q_change,
-         "t_change":t_change.drop_vars("height"),
+         "t_change":t_change,
             })
 
 def kinematic_frontogenesis(q,u,v):
@@ -454,6 +465,11 @@ def kinematic_frontogenesis(q,u,v):
 
     Returns
     * 2d kinematic frontogenesis in units (g/kg) / 100 km / 3h    """
+
+    #Rechunk data in one lat and lon dim
+    q = q.chunk({"lat":-1,"lon":-1})
+    u = u.chunk({"lat":-1,"lon":-1})
+    v = v.chunk({"lat":-1,"lon":-1})
 
     #Convert specific humidity to g/kg
     q = q*1000
@@ -578,6 +594,11 @@ def coast_relative_frontogenesis(q,u,v,angle_ds):
     * xarray dataset with variables of "shearing" and "confluence". These describe the changes in the moisture gradient due to strecthing and shearing relative to the coastline.
     
     """
+
+    #Rechunk data in one lat and lon dim
+    q = q.chunk({"lat":-1,"lon":-1})
+    u = u.chunk({"lat":-1,"lon":-1})
+    v = v.chunk({"lat":-1,"lon":-1})
 
     #Convert to g/kg
     q = q * 1000 

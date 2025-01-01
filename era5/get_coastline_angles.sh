@@ -2,8 +2,8 @@
 
 #PBS -P gb02 
 #PBS -q normal
-#PBS -l walltime=01:00:00,mem=64GB 
-#PBS -l ncpus=8
+#PBS -l walltime=12:00:00,mem=190GB 
+#PBS -l ncpus=48
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/era5_get_coastline_angles.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/era5_get_coastline_angles.e

@@ -618,8 +618,7 @@ def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_t
 
         #Take the weighted mean and convert complex numbers to an angle and magnitude
         print("INFO: Take the weighted mean and convert complex numbers to an angle and magnitude...")
-        with TqdmCallback(desc="compute"):
-            mean_angles = da.mean((weights*stack), axis=0).compute()
+        mean_angles = da.mean((weights*stack), axis=0).persist()
         progress(mean_angles)
         mean_abs = da.abs(mean_angles)
         mean_angles = da.angle(mean_angles)    
@@ -632,20 +631,17 @@ def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_t
 
         #Calculate the weighted circular variance
         print("INFO: Calculating the sum of the weights...")
-        with TqdmCallback(desc="compute"):
-            total_weight = da.sum(weights, axis=0).compute()
+        total_weight = da.sum(weights, axis=0).persist()
         progress(total_weight)
         print("INFO: Calculating variance...")
         #variance = (1 - da.abs(da.sum( (weights/total_weight) * (stack / da.abs(stack)), axis=0)))#.persist()
-        with TqdmCallback(desc="compute"):
-            variance = (1 - da.abs(da.sum( (weights/total_weight) * (stack / stack_abs), axis=0))).compute()
+        variance = (1 - da.abs(da.sum( (weights/total_weight) * (stack / stack_abs), axis=0))).persist()
         progress(variance)
         del stack, weights, total_weight 
 
         #Calculate minimum distance to the coast
         print("INFO: Calculating minimum distance to the coast...")
-        with TqdmCallback(desc="compute"):
-            min_coast_dist = stack_abs.min(axis=0).compute()
+        min_coast_dist = stack_abs.min(axis=0).persist()
 
         #Do the interpolation across the coastline
         #print("INFO: Doing interpolation across the coastline and saving...")
