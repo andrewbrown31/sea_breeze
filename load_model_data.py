@@ -503,7 +503,7 @@ def get_weights(x, p=4, q=2, R=5, slope=-1, r=10000):
     y = da.where(x>r, 0, y)
     return y
 
-def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_to_load=None,save=False,path_to_save=None,lat_slice=None,lon_slice=None):
+def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,path_to_load=None,save=False,path_to_save=None,lat_slice=None,lon_slice=None):
 
     '''
     Ewan's method with help from Jarrah.
@@ -535,13 +535,14 @@ def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_t
     * An xarray dataset with an array of coastline angles (0-360 degrees from N) for the labelled coastline array, as well as an array of angle variance as an estimate of how many coastlines are influencing a given point
     '''
 
-    assert np.in1d([0,1],np.unique(lsm)).all(), "Land-sea mask must be binary"
     if save:
         if path_to_save is None:
             raise AttributeError("Saving but no path speficfied")
         
     if compute:
 
+        assert np.in1d([0,1],np.unique(lsm)).all(), "Land-sea mask must be binary"
+        
         warnings.simplefilter("ignore")
 
         #From the land sea mask define the coastline and a label array
@@ -563,29 +564,17 @@ def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_t
         xx_t = np.array([xx[xl[t],yl[t]] for t in np.arange(len(xl))])
 
         #Repeat the 2d lat lon array over a third dimension (corresponding to the coast dim). Also repeat the yy_t and xx_t vectors over the spatial arrays
-        #yy_rep = da.moveaxis(da.stack([da.from_array(yy)]*yl.shape[0],axis=0),0,-1).rechunk({0:latlon_chunk_size,1:latlon_chunk_size,2:-1})
-        #xx_rep = da.moveaxis(da.stack([da.from_array(xx)]*xl.shape[0],axis=0),0,-1).rechunk({0:latlon_chunk_size,1:latlon_chunk_size,2:-1})
         yy_rep = da.moveaxis(da.stack([da.from_array(yy)]*yl.shape[0],axis=0),0,-1).rechunk({0:-1,1:-1,2:latlon_chunk_size})
         xx_rep = da.moveaxis(da.stack([da.from_array(xx)]*xl.shape[0],axis=0),0,-1).rechunk({0:-1,1:-1,2:latlon_chunk_size})
         xx_t_rep = (xx_rep * 0) + xx_t
         yy_t_rep = (yy_rep * 0) + yy_t
 
         #Calculate the distance and angle between coastal points and all other points using pyproj, then convert to complex space.
-        #NOTE: I think this is now using up a lot of memory
         geod = pyproj.Geod(ellps="WGS84")
         def calc_dist(lon1,lat1,lon2,lat2):
             fa,_,d = geod.inv(lon1,lat1,lon2,lat2)
             return d/1e3 * np.exp(1j * np.deg2rad(fa))
         
-        #stack = xr.apply_ufunc(
-        #    calc_dist,
-        #    xr.DataArray(xx_t_rep),
-        #    xr.DataArray(yy_t_rep),
-        #    xr.DataArray(xx_rep),
-        #    xr.DataArray(yy_rep),
-        #    dask="parallelized",
-        #    output_dtypes=[complex],
-        #    )
         stack = da.map_blocks(
                     calc_dist,
                     xx_t_rep,
@@ -604,17 +593,6 @@ def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_t
         
         #Create an inverse distance weighting function
         weights = get_weights(stack_abs, p=4, q=2, R=R, slope=-1)
-        # weights = da.map_blocks(
-        #     get_weights,
-        #     stack_abs,
-        #     p=4,
-        #     q=2,
-        #     R=R,
-        #     slope=-1,
-        #     r=10000,
-        #     dtype=np.float32,
-        #     meta=np.array((), dtype=np.float32)
-        # )
 
         #Take the weighted mean and convert complex numbers to an angle and magnitude
         print("INFO: Take the weighted mean and convert complex numbers to an angle and magnitude...")
@@ -626,15 +604,11 @@ def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_t
         #Flip the angles inside the coastline for convention, and convert range to 0 to 2*pi
         mean_angles = da.where(land_label==1,(mean_angles+np.pi) % (2*np.pi),mean_angles % (2*np.pi))
 
-        #Convert angles and magnitude back to complex numbers to do interpolation across the coastline
-        #mean_complex = mean_abs * da.exp(1j*mean_angles)
-
         #Calculate the weighted circular variance
         print("INFO: Calculating the sum of the weights...")
         total_weight = da.sum(weights, axis=0).persist()
         progress(total_weight)
         print("INFO: Calculating variance...")
-        #variance = (1 - da.abs(da.sum( (weights/total_weight) * (stack / da.abs(stack)), axis=0)))#.persist()
         variance = (1 - da.abs(da.sum( (weights/total_weight) * (stack / stack_abs), axis=0))).persist()
         progress(variance)
         del stack, weights, total_weight 
@@ -643,26 +617,10 @@ def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_t
         print("INFO: Calculating minimum distance to the coast...")
         min_coast_dist = stack_abs.min(axis=0).persist()
 
-        #Do the interpolation across the coastline
-        #print("INFO: Doing interpolation across the coastline and saving...")
-        # points = mean_complex.ravel()
-        # valid = ~np.isnan(points)
-        # points_valid = points[valid]
-        # xx_rav, yy_rav = xx.ravel(), yy.ravel()
-        # xxv = xx_rav[valid]
-        # yyv = yy_rav[valid]
-        # interpolated_angles = scipy.interpolate.griddata(np.stack([xxv, yyv]).T, points_valid, (xx, yy), method="linear").reshape(lsm.shape)    
-
         #Convert angles to degrees, and from bearing to orientation of coastline.
         #Also create an xr dataarray object
-        #mean_angles = 
         angle_da = xr.DataArray(da.rad2deg(mean_angles) - 90,coords={"lat":lat,"lon":lon})
-        angle_da = xr.where(angle_da < 0, angle_da+360, angle_da)
-
-        #Same for interpolated angles, but also convert complex interpolated numbers to angle
-        # interpolated_angles = da.rad2deg(da.angle(interpolated_angles))
-        # interpolated_angle_da = xr.DataArray(interpolated_angles - 90,coords={"lat":lat,"lon":lon})
-        # interpolated_angle_da = xr.where(interpolated_angle_da < 0, interpolated_angle_da+360, interpolated_angle_da)        
+        angle_da = xr.where(angle_da < 0, angle_da+360, angle_da)      
 
         #Convert variance and coast arrays to xr dataarrays
         var_da = xr.DataArray(variance,coords={"lat":lat,"lon":lon})
@@ -672,16 +630,15 @@ def get_coastline_angle_kernel(lsm,R=20,latlon_chunk_size=10,compute=True,path_t
         min_coast_dist = xr.DataArray(min_coast_dist,coords={"lat":lat,"lon":lon})
 
         #Create an xarray dataset
-        #angle_ds =  xr.Dataset({"angle":angle_da,"variance":var_da,"angle_interp":interpolated_angle_da,"coast":coast,"mean_complex":mean_complex}).persist()
         angle_ds =  xr.Dataset({
             "angle":angle_da,
             "variance":var_da,
             "coast":coast,
             "mean_abs":mean_abs,
             "mean_angles":mean_angles,
-            "min_coast_dist":min_coast_dist})#.persist()
-        #progress(angle_ds)
+            "min_coast_dist":min_coast_dist})
 
+        #Do the interpolation across the coastline
         angle_ds = interpolate_angles(angle_ds)
 
     else:
