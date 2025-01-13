@@ -26,7 +26,7 @@ def load_angle_ds(path,lat_slice,lon_slice,chunks="auto"):
 def calc_sbi(wind_ds,
                     angle_ds,
                     subtract_mean=False,
-                    height_mean=True,
+                    height_mean=False,
                     blh_da=None,
                     alpha_height=0,
                     sb_heights=[500,2000],
