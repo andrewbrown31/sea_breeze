@@ -28,6 +28,7 @@ if __name__ == "__main__":
     parser.add_argument("--time_chunk",default=0,type=int,help="Chunk size for time dim. Default is on-disk chunks")
     parser.add_argument("--lon_chunk",default=0,type=int,help="Chunk size for lon dim. Default is on-disk chunks")
     parser.add_argument("--lat_chunk",default=0,type=int,help="Chunk size for lat dim. Default is on-disk chunks")    
+    parser.add_argument("--height_method",default="blh",type=str,help="Either blh or static")
     args = parser.parse_args()
 
     if args.subtract_mean:
@@ -52,7 +53,7 @@ if __name__ == "__main__":
 
     #Set SBI settings and chunk settings
     subtract_mean = args.subtract_mean
-    height_method = "blh"
+    height_method = args.height_method
     height_mean = False
     if args.lev_chunk==0:
         lev_chunk = {}
@@ -129,6 +130,7 @@ if __name__ == "__main__":
                                 subtract_mean=subtract_mean,
                                 height_method=height_method,
                                 blh_da=aus2200_zmla,
+                                height_mean=height_mean,
                                 vert_coord="lev")
 
     #Save output

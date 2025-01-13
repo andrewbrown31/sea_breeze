@@ -2,9 +2,9 @@
 
 #PBS -P gb02 
 #PBS -q normal
-#PBS -l walltime=1:00:00,mem=190GB 
+#PBS -l walltime=1:00:00,mem=64GB 
 #PBS -l ncpus=48
-#PBS -l jobfs=190gb
+#PBS -l jobfs=1gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/era5_sbi.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/era5_sbi.e
 #PBS -l storage=gdata/gb02+gdata/hh5+gdata/ua8+gdata/rt52

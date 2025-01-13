@@ -24,6 +24,7 @@ if __name__ == "__main__":
     parser.add_argument("--hgt1",default=0,type=float,help="Start height to load from disk")
     parser.add_argument("--hgt2",default=4500,type=float,help="End height to load from disk")    
     parser.add_argument('--subtract_mean',default=False,action=argparse.BooleanOptionalAction,help="Subtract mean to calculate SBI on perturbation winds")
+    parser.add_argument("--height_method",default="blh",type=str,help="Either blh or static")
     args = parser.parse_args()
 
     if args.subtract_mean:
@@ -47,7 +48,7 @@ if __name__ == "__main__":
 
     #Set SBI settings and chunk settings
     subtract_mean = args.subtract_mean
-    height_method = "blh"
+    height_method = args.height_method
     height_mean = False                     
 
     #Load ERA5 model level winds, BLH and static info
@@ -76,6 +77,7 @@ if __name__ == "__main__":
     #Calc SBI
     sbi = sea_breeze_funcs.calc_sbi(era5_wind,
                                 angle_ds,
+                                height_mean=height_mean,
                                 subtract_mean=subtract_mean,
                                 height_method=height_method,
                                 blh_da=era5_zmla["blh"]["blh"],
