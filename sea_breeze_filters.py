@@ -6,6 +6,18 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import datetime as dt
+import metpy.calc as mpcalc
+import dask.array as da
+
+def percentile(field,p=95):
+
+    """
+    From an xarray dataarray, calculate the pth percentile of the field, using dask.
+    """
+    print("Re-shaping field for percentile calculation...")
+    field_stacked = field.stack(z=list(field.dims))
+    print("Calculating percentile...")
+    return np.array(da.percentile(da.array(field_stacked),p))[0]
 
 def binary_mask(field,thresh):
 
@@ -19,27 +31,38 @@ def binary_mask(field,thresh):
 
 class Mask_Options:
     
-    #Options.
-    # TODO move to function input and save options as class
-    # TODO: Change area to area units instead of pixels. Can use spacing arg in regionprops
+    '''
+    Options for filtering sea breeze candidate objects
+    '''
 
     def __init__(self):
         self.filters = {
-            "orientation_filter":True,
+            "orientation_filter":False,
             "aspect_filter":True,
             "area_filter":True,
-            "dist_to_coast_filter":True,
             "time_filter":True,
-            "land_sea_temperature_filter":True
+            "dist_to_coast_filter":False,
+            "land_sea_temperature_filter":False,
+            "temperature_change_filter":False,
+            "humidity_change_filter":False,
+            "wind_change_filter":False
         }
 
         self.thresholds = {
             "orientation_tol":30,                     #Within 30 degrees of coastline
-            "area_thresh":10,                         #Area of 10 pixels or greater
+            "area_thresh":1500,                       #Area of 1500 km^2 or greater
             "aspect_thresh":3,                        #Aspect ratio of 3 or greater
-            "time_thresh_lst":12,                     #LST hour must be greater than 12 (and therefore less than or equal to 23),
+            "hour_min_lst":12,                        #LST hour must be greater than or equal to 12
+            "hour_max_lst":23,                        #LST hour must be less than or equal to 23
             "land_sea_temperature_diff_thresh":0,     #Land sea temperature difference must be greater than zero
+            "temperature_change_thresh":0,            #Temperature change must be less than zero
+            "humidity_change_thresh":0,               #Humidity change must be greater than zero
+            "wind_change_thresh":0,                   #Wind speed change in onshore direction must be greater than zero
             "distance_to_coast_thresh":300}           #Within 300 km of the coast
+        
+        self.options = {
+            "land_sea_temperature_radius":50,         #Radius of the rolling maximum filter for land sea temperature difference (km)
+        }
 
     def set_options(self,kwargs):
         for k, val in kwargs.items():
@@ -47,6 +70,8 @@ class Mask_Options:
                 self.filters[k] = val
             elif k in self.thresholds.keys():
                 self.thresholds[k] = val
+            elif k in self.options.keys():
+                self.options[k] = val
             else:
                 raise ValueError(f"{k} not a valid option")
         return self
@@ -54,25 +79,130 @@ class Mask_Options:
     def __str__(self):
         return f"Filters: {self.filters} \n Thresholds: {self.thresholds}"
 
-def filter_sea_breeze(mask,angle_ds,ta,time,lsm,resolution_km,**kwargs):
-    
+def metpy_grid_area(lon,lat):
     """
+    From a grid of latitudes and longitudes, calculate the grid spacing in x and y, and the area of each grid cell in km^2
+    """
+    xx,yy=np.meshgrid(lon,lat)
+    dx,dy=mpcalc.lat_lon_grid_deltas(xx, yy)
+    dx=np.pad(dx,((0,0),(0,1)),mode="edge")
+    dy=np.pad(dy,((0,1),(0,0)),mode="edge")
+    return dx.to("km"),dy.to("km"),(dx*dy).to("km^2")
+
+def circmean_wrapper(data):
+    return scipy.stats.circmean(data, low=-90, high=90)
+
+def fuzzy_function(x, x1=0, y1=0, y2=1, D=2):
+
+    """
+    Fuzzy logic function from Coceal et al. 2018 (https://doi.org/10.1002/asl.846)
 
     ## Input
-    * mask: binary mask of sea breeze objects
-    * options: dictionary of options for filtering sea breeze objects
+    * x: xarray dataarray of input values
+    * x1: x value at which the function starts to increase
+    * y1: y value for x <= x1
+    * y2: y value for x >= x2, where x2 is the maximum value of x divided by D
+    * D: scaling factor for x2
+    """
+
+    x2 = (x.max() / D).values
+    
+    f_x = y1 + ( ( y2 - y1 ) / ( x2 - x1 ) ) * ( x - x1 )
+    f_x = xr.where(x <= x1, y1, f_x)
+    f_x = xr.where(x >= x2, y2, f_x)
+
+    return f_x
+
+def fuzzy_mask(wind_change,q_change,t_change,thresh,combine_method="product"):
+
+    """
+    From Coceal et al. 2018, a fuzzy logic method for identifying sea breezes. 
+
+    ## Input
+    * wind_change: xarray dataarray of wind speed change in the onshore direction
+    * q_change: xarray dataarray of specific humidity change
+    * t_change: xarray dataarray of temperature change
+    * combine_method: method for combining the fuzzy functions. Can be "product" or "mean". Note that Coceal et al. 2018 use the mean method.
+
+    ## Output
+    * mask: binary mask of candidate sea breeze objects
+
+    Note that t_change is assumed to be negative. For example, a sea breeze front results in a negative temperature change.
+
+    Coceal, O., Bohnenstengel, S. I., & Kotthaus, S. (2018). Detection of sea-breeze events around London using a fuzzy-logic algorithm. Atmospheric Science Letters, 19(9). https://doi.org/10.1002/asl.846
+    """
+
+    #Calculate the fuzzy functions for each variable
+    wind_fuzzy = fuzzy_function(wind_change)
+    q_fuzzy = fuzzy_function(q_change)
+    t_fuzzy = fuzzy_function(-t_change)
+
+    #Combine the fuzzy functions
+    if combine_method=="product":
+        mask = (wind_fuzzy * q_fuzzy * t_fuzzy) > thresh
+    elif combine_method=="mean":
+        mask = ((wind_fuzzy + q_fuzzy + t_fuzzy) / 3) > thresh
+    else:
+        raise ValueError("combine_method must be 'product' or 'mean'")
+
+    mask = mask.assign_attrs({"thresh":thresh,"combine_method":combine_method})
+
+    return mask*1
+
+def filter_sea_breeze(mask,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind_change=None,props_df_output_path=None,**kwargs):
+    
+    """
+    ## Input
+    ### Required
+    * mask: binary mask of sea breeze objects, as an xarray dataarray
+    * time: time of the data in the form %Y-%m-%d %H:%M
+
+    ### Optional
     * angle_ds: xarray dataset of coastline angles created by get_coastline_angles.py
     * ta: xarray dataarray of surface temperatures
-    * time: time of the data in the form %Y-%m-%d %H:%M
     * lsm: xarray dataarray of the land-sea mask
-    * resolution_km: resolution of the grid in km
+    * t_change: xarray datarray of temperature change
+    * q_change: xarray datarray of specific humidity change
+    * wind_change: xarray datarray of onshore wind speed change
+    * **kwargs: options for filtering the sea breeze objects (see below)
 
-    ## Options
-    * TODO 
+    ## Options (kwargs)
+    ### Filters
+    * orientation_filter: Filter candidate objects based on orientation parallel to the coastline True/False (default False)
+         - Requires angle_ds to be provided
+    * aspect_filter: Filter candidate objects based on aspect ratio True/False (default True)
+    * area_filter: Filter candidate objects based on area True/False (default True)
+    * dist_to_coast_filter: Filter candidate objects based on distance to the coast True/False (default False)
+        - Requires angle_ds to be provided
+    * time_filter: Filter candidate objects based on local solar time True/False (default True)
+    * land_sea_temperature_filter: Filter candidate objects based on land sea temperature difference True/False (default False)
+        - Requires ta and lsm to be provided
+    * temperature_change_filter: Filter candidate objects based on mean local temperature decrease True/False (default False)
+        - Requires t_change to be provided
+    * humidity_change_filter: Filter candidate objects based on mean local humidity increase True/False (default False)
+        - Requires q_change to be provided
+    * wind_change_filter: Filter candidate objects based on mean local onshore wind speed increase True/False (default False)
+        - Requires wind_change to be provided
+
+    ### Thresholds
+    * orientation_tol: Tolerance in degrees for orientation filter (default 30 degrees)
+    * area_thresh: Minimum area in km^2 for area filter (defailt 1500 km^2)
+    * aspect_thresh: Minimum aspect ratio for aspect filter (default 3)
+    * hour_min_lst: Minimum local solar time in hours for time filter (default 12)
+    * hour_max_lst: Maximum local solar time in hours for time filter (default 23)
+    * land_sea_temperature_diff_thresh: Minimum land sea temperature difference for land sea temperature filter (default 0)
+    * distance_to_coast_thresh: Maximum distance to coast in km for distance to coast filter (default 300 km)
+    * temperature_change_thresh: Maximum temperature change for temperature change filter, same units as t_change (default 0)
+    * humidity_change_thresh: Minimum humidity change for humidity change filter, same units as q_change (default 0)
+    * wind_change_thresh: Minimum wind change for onshore wind change filter, same units as wind_change (default 0)
+
+    ### Other options
+    * land_sea_temperature_radius: Radius of the rolling maximum/mean filter for land sea temperature difference, in km (default 50 km). NOTE that this radius is converted to pixels by using the mean grid spacing in x and y, and will therefore vary with latitude.
 
     ## Output
     * mask: binary mask of sea breeze objects after filtering
 
+    ## Description
     Take a binary sea breeze mask and identify objects, then filter it for sea breezes based on several conditions related to those objects
 
     - Area (number of pixels) (done)
@@ -81,9 +211,7 @@ def filter_sea_breeze(mask,angle_ds,ta,time,lsm,resolution_km,**kwargs):
     - Within some distance to the coast (done)
     - Positive land-sea temperature contrast/gradient (done)
     - Local time (done - criteria is that the local time is between 12:00 and 23:59 local solar time)
-    - TODO Local increase/decrease in humdity/wind speed/temperature?
-    - TODO Fuzzy method? Separate function.
-    - TODO Save properties of each object for further analysis
+
     - TODO Propagation speed or persistance? Note this is not straightforward. Will need to be in a separate function with input having a time dimension.
 
     """
@@ -91,14 +219,23 @@ def filter_sea_breeze(mask,angle_ds,ta,time,lsm,resolution_km,**kwargs):
     #Set options
     mask_options = Mask_Options().set_options(kwargs)
 
+    #Get time for data array
+    #time = pd.to_datetime(mask.time.values).strftime("%Y-%m-%d %H:%M")
+    time = mask.time.values
+
     #From a binary (mask) array of candidate sea breeze objects, label from 1 to N
     labels = skimage.measure.label(mask)
+    labels_da = xr.DataArray(labels, dims=mask.dims, coords=mask.coords)
 
     #Using skimage, return properties for each candidate object
     region_props = skimage.measure.regionprops(labels,spacing=(1,1))
 
     #Get longitudes of image for the purpose of converting to local solar time
-    lons = angle_ds.lon.values
+    lons = mask.lon.values
+
+    #Get area of pixels using metpy
+    dx,dy,pixel_area = metpy_grid_area(mask.lon,mask.lat)
+    pixel_area = xr.DataArray(pixel_area,coords=mask.coords,dims=mask.dims)
 
     #For each object create lists of relevant properties
     labs = np.array([region_props[i].label for i in np.arange(len(region_props))])                           #Object label number
@@ -119,40 +256,102 @@ def filter_sea_breeze(mask,angle_ds,ta,time,lsm,resolution_km,**kwargs):
         "minor":minor,
         "lst":lst}, index=labs)        
     props_df["aspect"] = props_df.major/props_df.minor
-
-    #Calculate the mean angle of nearby coastlines over each labelled region using xarray apply ufunc and scipy circmean
-    def circmean_wrapper(data):
-        return scipy.stats.circmean(data, low=-90, high=90)
-    labels_da = xr.DataArray(labels, dims=angle_ds.dims, coords=angle_ds.coords)
-    mean_angles = angle_ds.angle_interp.groupby(labels_da.rename("label")).map(
-            lambda x: xr.apply_ufunc(
-                circmean_wrapper,
-                x,
-                input_core_dims=[['stacked_lat_lon']],
-                vectorize=True
-            )
-        ).to_series()    
     
-    #Calculate the mean distance to coastline over each labelled region
-    mean_dist = angle_ds.min_coast_dist.groupby(labels_da.rename("label")).mean().to_series()
-
-    #Calculate the local (smoothed) difference between nearest land and sea temperatures
-    #Here use a radius of 50 km for the smoothing (radial max over land, mean over ocean)
-    land_sea_temp_diff = land_sea_temperature_diff_rolling_max(ta,lsm,R_km=50,resolution_km=resolution_km)
-
-    #Calculate the mean land-sea temperature difference over each labelled region
-    mean_land_sea_temp_diff = land_sea_temp_diff.groupby(labels_da.rename("label")).mean().to_series()
-
     #Create condition to keep objects
-    cond = ( (props_df.orient - mean_angles).abs() <= mask_options.thresholds["orientation_tol"]) &\
-            ( props_df.aspect >= mask_options.thresholds["aspect_thresh"] ) &\
-            ( props_df.area >= mask_options.thresholds["area_thresh"] ) &\
-            ( mean_dist <= mask_options.thresholds["distance_to_coast_thresh"] ) &\
-            ( props_df.lst.dt.hour >= mask_options.thresholds["time_thresh_lst"] ) &\
-            ( mean_land_sea_temp_diff > mask_options.thresholds["land_sea_temperature_diff_thresh"] )
+    cond = pd.DataFrame(np.ones(props_df.shape[0]).astype(bool),index=props_df.index)[0]
+
+    #Filter objects based on orientation relative to coastlines
+    if mask_options.filters["orientation_filter"]:
+        if (angle_ds is not None):
+            #Calculate the mean angle of nearby coastlines over each labelled region using xarray apply ufunc and scipy circmean
+            mean_angles = angle_ds.angle_interp.groupby(labels_da.rename("label")).map(
+                    lambda x: xr.apply_ufunc(
+                        circmean_wrapper,
+                        x,
+                        input_core_dims=[['stacked_lat_lon']],
+                        vectorize=True
+                    )
+                ).to_series()    
+            cond = cond & ( (props_df.orient - mean_angles).abs() <= mask_options.thresholds["orientation_tol"])
+        else:
+            raise ValueError("angle_ds must be provided for orientation filter")
+
+    #Filter objects based on aspect ratio
+    if mask_options.filters["aspect_filter"]:
+        cond = cond & ( props_df.aspect >= mask_options.thresholds["aspect_thresh"] )
+
+    #Filter objects based on area
+    if mask_options.filters["area_filter"]:
+        mean_pixel_area = pixel_area.groupby(labels_da.rename("label")).mean().to_series()
+        props_df["area_km"] = props_df.area*mean_pixel_area
+        cond = cond & ( (props_df.area*mean_pixel_area) >= mask_options.thresholds["area_thresh"] )
+
+    #Filter objects based on distance to coast
+    if mask_options.filters["dist_to_coast_filter"]:
+        if (angle_ds is not None):
+            #Calculate the mean distance to coastline over each labelled region
+            mean_dist = angle_ds.min_coast_dist.groupby(labels_da.rename("label")).mean().to_series()
+            props_df["mean_dist_to_coast_km"] = mean_dist
+            cond = cond & ( mean_dist <= mask_options.thresholds["distance_to_coast_thresh"] )
+        else:
+            raise ValueError("angle_ds must be provided for distance to coast filter")
+
+    #Filter objects based on local solar time
+    if mask_options.filters["time_filter"]:
+        cond = cond & ( props_df.lst.dt.hour >= mask_options.thresholds["hour_min_lst"] ) &\
+            ( props_df.lst.dt.hour <= mask_options.thresholds["hour_max_lst"] )
+        
+    #Filter objects based on land sea temperature difference
+    if mask_options.filters["land_sea_temperature_filter"]:
+        if (ta is not None) & (lsm is not None):
+            #Calculate the local (smoothed) difference between nearest land and sea temperatures
+            #Here use a radius of 50 km for the smoothing (radial max over land, mean over ocean)
+            land_sea_temp_diff = land_sea_temperature_diff_rolling_max(
+                ta,
+                lsm,
+                R_km=mask_options.options["land_sea_temperature_radius"],
+                dy=dy,dx=dx)
+
+            #Calculate the mean land-sea temperature difference over each labelled region
+            mean_land_sea_temp_diff = land_sea_temp_diff.groupby(labels_da.rename("label")).mean().to_series()
+            props_df["mean_land_sea_temp_diff"] = mean_land_sea_temp_diff
+            cond = cond & ( mean_land_sea_temp_diff > mask_options.thresholds["land_sea_temperature_diff_thresh"] ) 
+        else:
+            raise ValueError("ta and lsm must be provided for land sea temperature filter")   
     
+    #Filter objects based on local temperature decrease
+    if mask_options.filters["temperature_change_filter"]:
+        if (t_change is not None):
+            #Calculate the mean temperature change over each labelled region
+            mean_t_change = t_change.groupby(labels_da.rename("label")).mean().to_series()
+            props_df["mean_t_change"] = mean_t_change
+            cond = cond & ( mean_t_change < mask_options.thresholds["temperature_change_thresh"] ) 
+        else:
+            raise ValueError("t_change must be provided for temperature change filter")
+        
+    #Filter objects based on local humidity increase
+    if mask_options.filters["humidity_change_filter"]:
+        if (q_change is not None):
+            #Calculate the mean humidity change over each labelled region
+            mean_q_change = q_change.groupby(labels_da.rename("label")).mean().to_series()
+            props_df["mean_q_change"] = mean_q_change
+            cond = cond & ( mean_q_change > mask_options.thresholds["humidity_change_thresh"] ) 
+        else:
+            raise ValueError("q_change must be provided for humidity change filter")
+        
+    #Filter objects based on local onshore wind speed increase
+    if mask_options.filters["wind_change_filter"]:
+        if (wind_change is not None):
+            #Calculate the mean wind change over each labelled region
+            mean_wind_change = wind_change.groupby(labels_da.rename("label")).mean().to_series()
+            props_df["mean_wind_change"] = mean_wind_change
+            cond = cond & ( mean_wind_change > mask_options.thresholds["wind_change_thresh"] ) 
+        else:
+            raise ValueError("wind_change must be provided for wind change filter")
+
     #Subset label dataframe based on these conditions
     props_df = props_df.loc[cond]
+    props_df["time_utc"] = time
 
     #Remove labels that don't meet conditions from mask
     mask = xr.where(labels_da.isin(props_df.loc[cond].index),1,0)
@@ -161,18 +360,27 @@ def filter_sea_breeze(mask,angle_ds,ta,time,lsm,resolution_km,**kwargs):
     mask = mask.assign_attrs({
         "filters":mask_options.filters,
         "thresholds":mask_options.thresholds,
-        "resolution_km":resolution_km})    
+        "other_options":mask_options.options})    
 
     #Combine mask with label array and props_df
     ds = xr.merge([
-        xr.Dataset.from_dataframe(props_df),
         mask.assign_coords({"time":time}).expand_dims("time").rename("mask"),
-        xr.where(labels_da.isin(props_df.index),labels_da,0).assign_coords({"time":time}).expand_dims("time").rename("label")
-        ])
+        xr.where(
+            labels_da.isin(props_df.index),labels_da,0
+            ).assign_coords({"time":time}).expand_dims("time").rename("filtered_labels"),
+        labels_da.assign_coords({"time":time}).expand_dims("time").rename("all_labels")
+        ]).astype(np.int16)
+        #xr.Dataset.from_dataframe(props_df).assign_coords({"time":time}).expand_dims("time"),
 
-    return ds
+    #Save props_df to csv and output with label index as a column
+    if props_df_output_path is None:
+        props_df_output_path = "/scratch/gb02/ab4502/tmp/props_df.csv"
+    props_df = props_df.reset_index().rename({"index":"label"})
+    props_df.to_csv(props_df_output_path,mode="a",header=False,index=False)
 
-def land_sea_temperature_diff_rolling_max(ts,lsm,R_km,resolution_km):
+    return ds, props_df
+
+def land_sea_temperature_diff_rolling_max(ts,lsm,R_km,dy,dx):
 
     """
     From a dataarray of surface temperature (ts), calculate the land-sea temperature difference for each point in the domain.
@@ -182,11 +390,9 @@ def land_sea_temperature_diff_rolling_max(ts,lsm,R_km,resolution_km):
     ## Input
     * ts: xarray dataarray of surface temperatures
     * lsm: xarray dataarray of the land-sea mask
-    * R: radius of the rolling maximum filter in km
-    * resolution_km: resolution of the grid in km
-
-    TODO: Nearest neighbour max? If temperature has dropped locally due to sea breeze front, then the land temperature could become colder than the ocean temperature. Or use previous time for the calculation?
-    TODO: Use pyproj for gaussian weighting function.
+    * R_km: target radius of the rolling maximum filter in km. note that actual radius is calculated by dividing this number by the the mean grid spacing in x and y
+    * dy: y grid spacing in km
+    * dx: x grid spacing in km
     """
     #First define land and sea nearest neighbour lookup for all points
     lat = lsm.lat.values
@@ -222,13 +428,15 @@ def land_sea_temperature_diff_rolling_max(ts,lsm,R_km,resolution_km):
     target_lat_sea = xr.DataArray(target_lat_sea,dims=("lat","lon"),coords={"lat":lsm.lat,"lon":lsm.lon})
 
     #Filter tas with a rolling mean and maximum over a radius
-    def create_circular_footprint(radius):
-        """Create a circular footprint with a given radius and resolution."""
-        y, x = np.ogrid[-radius:radius+1, -radius:radius+1]
-        footprint = x**2 + y**2 <= radius**2
-        return footprint    
-    radius = int(R_km / resolution_km)
-    footprint = create_circular_footprint(radius)    
+    def create_elliptical_footprint(radius_y, radius_x):
+        """Create an elliptical footprint with given radii for y and x directions."""
+        y, x = np.ogrid[-radius_y:radius_y+1, -radius_x:radius_x+1]
+        footprint = (x**2 / radius_x**2) + (y**2 / radius_y**2) <= 1
+        return footprint   
+    radius_y = int(np.round(R_km / np.mean(dy.data)))
+    radius_x = int(np.round(R_km / np.mean(dx.data)))
+    footprint = create_elliptical_footprint(radius_y,radius_x)    
+    print(f"INFO: Radius for land_sea_temperature_difference smoothing in longitude direction ({radius_x} pixels) will vary with latitude, between {radius_x * np.min(dx.data)} km and {radius_x * np.max(dx.data)} km.\nINFO: Radius in latitude direction is {radius_y * np.mean(dy.data)} km ({radius_y} pixels)")
     
     land_ts = xr.DataArray(
         scipy.ndimage.generic_filter(ts.where(lsm==1, np.nan), np.nanmax, footprint=footprint),
