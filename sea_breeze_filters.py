@@ -8,26 +8,8 @@ import xarray as xr
 import datetime as dt
 import metpy.calc as mpcalc
 import dask.array as da
-
-def percentile(field,p=95):
-
-    """
-    From an xarray dataarray, calculate the pth percentile of the field, using dask.
-    """
-    print("Re-shaping field for percentile calculation...")
-    field_stacked = field.stack(z=list(field.dims))
-    print("Calculating percentile...")
-    return np.array(da.percentile(da.array(field_stacked),p))[0]
-
-def binary_mask(field,thresh):
-
-    """
-    Take a field that diagnoses sea breeze potential and create a binary sea breeze mask based on a threshold
-
-    Absolute versus percentile/perturbation thresholds? Standard deviation threshold
-    """
-
-    return (field>thresh)*1
+from sea_breeze import utils
+import os
 
 class Mask_Options:
     
@@ -79,18 +61,26 @@ class Mask_Options:
     def __str__(self):
         return f"Filters: {self.filters} \n Thresholds: {self.thresholds}"
 
-def metpy_grid_area(lon,lat):
-    """
-    From a grid of latitudes and longitudes, calculate the grid spacing in x and y, and the area of each grid cell in km^2
-    """
-    xx,yy=np.meshgrid(lon,lat)
-    dx,dy=mpcalc.lat_lon_grid_deltas(xx, yy)
-    dx=np.pad(dx,((0,0),(0,1)),mode="edge")
-    dy=np.pad(dy,((0,1),(0,0)),mode="edge")
-    return dx.to("km"),dy.to("km"),(dx*dy).to("km^2")
+def percentile(field,p=95):
 
-def circmean_wrapper(data):
-    return scipy.stats.circmean(data, low=-90, high=90)
+    """
+    From an xarray dataarray, calculate the pth percentile of the field, using dask.
+    """
+    print("Re-shaping field for percentile calculation...")
+    field_stacked = field.stack(z=list(field.dims))
+    print("Calculating percentile...")
+    return np.array(da.percentile(da.array(field_stacked),p))[0]
+
+def binary_mask(field,thresh):
+
+    """
+    Take a field that diagnoses sea breeze potential and create a binary sea breeze mask based on a threshold
+
+    Absolute versus percentile/perturbation thresholds? Standard deviation threshold
+    """
+    mask = (field>thresh)*1
+    mask = mask.assign_attrs({"threshold":thresh})
+    return mask
 
 def fuzzy_function(x, x1=0, y1=0, y2=1, D=2):
 
@@ -149,7 +139,28 @@ def fuzzy_mask(wind_change,q_change,t_change,thresh,combine_method="product"):
 
     return mask*1
 
-def filter_sea_breeze(mask,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind_change=None,props_df_output_path=None,**kwargs):
+def initialise_props_df_output(props_df_out_path,props_df_template):
+    """
+    When applying the filtering using map_blocks, we need to create an output dataframe to store the object properties.
+    """
+    if os.path.exists(props_df_out_path):
+        os.remove(props_df_out_path)
+    pd.DataFrame(columns=props_df_template.columns).to_csv(props_df_out_path,index=False)
+
+def process_time_slice(time_slice,**kwargs):
+    """
+    For using filter_ds with map_blocks
+    """
+    ds, df = filter_ds(time_slice.squeeze(), **kwargs)
+    return ds
+
+def circmean_wrapper(data):
+    """
+    Wrapper for circmean function to use with xarray apply_ufunc
+    """
+    return scipy.stats.circmean(data, low=-90, high=90)
+
+def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind_change=None,props_df_output_path=None,output_land_sea_temperature_diff=False,**kwargs):
     
     """
     ## Input
@@ -221,29 +232,29 @@ def filter_sea_breeze(mask,angle_ds=None,lsm=None,ta=None,t_change=None,q_change
 
     #Get time for data array
     #time = pd.to_datetime(mask.time.values).strftime("%Y-%m-%d %H:%M")
-    time = mask.time.values
+    time = ds.time.values
 
     #From a binary (mask) array of candidate sea breeze objects, label from 1 to N
-    labels = skimage.measure.label(mask)
-    labels_da = xr.DataArray(labels, dims=mask.dims, coords=mask.coords)
+    labels = skimage.measure.label(ds["mask"])
+    labels_da = xr.DataArray(labels, dims=ds["mask"].dims, coords=ds["mask"].coords)
 
     #Using skimage, return properties for each candidate object
     region_props = skimage.measure.regionprops(labels,spacing=(1,1))
 
     #Get longitudes of image for the purpose of converting to local solar time
-    lons = mask.lon.values
+    lons = ds.lon.values
 
     #Get area of pixels using metpy
-    dx,dy,pixel_area = metpy_grid_area(mask.lon,mask.lat)
-    pixel_area = xr.DataArray(pixel_area,coords=mask.coords,dims=mask.dims)
+    dx,dy,pixel_area = utils.metpy_grid_area(ds.lon,ds.lat)
+    pixel_area = xr.DataArray(pixel_area,coords=ds["mask"].coords,dims=ds["mask"].dims)
 
     #For each object create lists of relevant properties
     labs = np.array([region_props[i].label for i in np.arange(len(region_props))])                           #Object label number
     eccen = [region_props[i].eccentricity for i in np.arange(len(region_props))]                             #Eccentricity
     area = [region_props[i].area for i in np.arange(len(region_props))]                                      #Area
     orient = np.rad2deg(np.array([region_props[i].orientation for i in np.arange(len(region_props))]))       #Orientation angle
-    major = np.rad2deg(np.array([region_props[i].axis_major_length for i in np.arange(len(region_props))]))  #Major axis length
-    minor = np.rad2deg(np.array([region_props[i].axis_minor_length for i in np.arange(len(region_props))]))  #Major axis length
+    major = np.array([region_props[i].axis_major_length for i in np.arange(len(region_props))])              #Major axis length
+    minor = np.array([region_props[i].axis_minor_length for i in np.arange(len(region_props))])              #Minor axis length
     centroid_lons = [lons[np.round(region_props[i].centroid[1]).astype(int)] for i in np.arange(len(region_props))]  
     lst = [pd.to_datetime(time) + dt.timedelta(hours=l / 180 * 12) for l in centroid_lons]                   #Local solar time
 
@@ -303,11 +314,11 @@ def filter_sea_breeze(mask,angle_ds=None,lsm=None,ta=None,t_change=None,q_change
         
     #Filter objects based on land sea temperature difference
     if mask_options.filters["land_sea_temperature_filter"]:
-        if (ta is not None) & (lsm is not None):
+        if ("ta" in list(ds.keys())) & (lsm is not None):
             #Calculate the local (smoothed) difference between nearest land and sea temperatures
             #Here use a radius of 50 km for the smoothing (radial max over land, mean over ocean)
             land_sea_temp_diff = land_sea_temperature_diff_rolling_max(
-                ta,
+                ds["ta"],
                 lsm,
                 R_km=mask_options.options["land_sea_temperature_radius"],
                 dy=dy,dx=dx)
@@ -321,9 +332,9 @@ def filter_sea_breeze(mask,angle_ds=None,lsm=None,ta=None,t_change=None,q_change
     
     #Filter objects based on local temperature decrease
     if mask_options.filters["temperature_change_filter"]:
-        if (t_change is not None):
+        if ("t_change" in list(ds.keys())):
             #Calculate the mean temperature change over each labelled region
-            mean_t_change = t_change.groupby(labels_da.rename("label")).mean().to_series()
+            mean_t_change = ds["t_change"].groupby(labels_da.rename("label")).mean().to_series()
             props_df["mean_t_change"] = mean_t_change
             cond = cond & ( mean_t_change < mask_options.thresholds["temperature_change_thresh"] ) 
         else:
@@ -331,9 +342,9 @@ def filter_sea_breeze(mask,angle_ds=None,lsm=None,ta=None,t_change=None,q_change
         
     #Filter objects based on local humidity increase
     if mask_options.filters["humidity_change_filter"]:
-        if (q_change is not None):
+        if ("q_change" in list(ds.keys())):
             #Calculate the mean humidity change over each labelled region
-            mean_q_change = q_change.groupby(labels_da.rename("label")).mean().to_series()
+            mean_q_change = ds["q_change"].groupby(labels_da.rename("label")).mean().to_series()
             props_df["mean_q_change"] = mean_q_change
             cond = cond & ( mean_q_change > mask_options.thresholds["humidity_change_thresh"] ) 
         else:
@@ -341,9 +352,9 @@ def filter_sea_breeze(mask,angle_ds=None,lsm=None,ta=None,t_change=None,q_change
         
     #Filter objects based on local onshore wind speed increase
     if mask_options.filters["wind_change_filter"]:
-        if (wind_change is not None):
+        if ("wind_change" in list(ds.keys())):
             #Calculate the mean wind change over each labelled region
-            mean_wind_change = wind_change.groupby(labels_da.rename("label")).mean().to_series()
+            mean_wind_change = ds["wind_change"].groupby(labels_da.rename("label")).mean().to_series()
             props_df["mean_wind_change"] = mean_wind_change
             cond = cond & ( mean_wind_change > mask_options.thresholds["wind_change_thresh"] ) 
         else:
@@ -360,17 +371,20 @@ def filter_sea_breeze(mask,angle_ds=None,lsm=None,ta=None,t_change=None,q_change
     mask = mask.assign_attrs({
         "filters":mask_options.filters,
         "thresholds":mask_options.thresholds,
-        "other_options":mask_options.options})    
+        "other_options":mask_options.options}).astype(bool)
 
     #Combine mask with label array and props_df
     ds = xr.merge([
         mask.assign_coords({"time":time}).expand_dims("time").rename("mask"),
         xr.where(
             labels_da.isin(props_df.index),labels_da,0
-            ).assign_coords({"time":time}).expand_dims("time").rename("filtered_labels"),
-        labels_da.assign_coords({"time":time}).expand_dims("time").rename("all_labels")
-        ]).astype(np.int16)
+            ).astype(np.int16).assign_coords({"time":time}).expand_dims("time").rename("filtered_labels"),
+        labels_da.astype(np.int16).assign_coords({"time":time}).expand_dims("time").rename("all_labels")
+        ])
         #xr.Dataset.from_dataframe(props_df).assign_coords({"time":time}).expand_dims("time"),
+
+    if (output_land_sea_temperature_diff) & (mask_options.filters["land_sea_temperature_filter"]):
+        ds = xr.merge((ds,land_sea_temp_diff.expand_dims("time").rename("land_sea_temp_diff")))
 
     #Save props_df to csv and output with label index as a column
     if props_df_output_path is None:
