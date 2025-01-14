@@ -610,3 +610,67 @@ def land_sea_temperature_grad(ts,lsm,N,angle_ds,weighting="none",sigma=0.1):
         land_minus_sea / dist)
 
     return land_minus_sea_grad    
+
+def filter_ds_driver(field_path,field_name,lat_slice,lon_slice,t1=None,t2=None,hourly_change_path=None,ta=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,**kwargs):
+
+    """
+    Driver function for filter_ds.
+    """
+
+    #Load sea breeze function from sea_breeze_funcs
+    field = xr.open_dataset(field_path,chunks={"time":1,"lat":-1,"lon":-1})[field_name].sel(lat=lat_slice,lon=lon_slice)
+    # lat_slice = slice(field.lat.min().values,field.lat.max().values)
+    # lon_slice = slice(field.lon.min().values,field.lon.max().values)
+    if (t1 is not None) & (t2 is not None):
+        field = field.sel(time=slice(t1,t2))
+    else:
+        t1 = field.time.min().values
+        t2 = field.time.max().values
+
+    #Mask based on percentile values
+    thresh = percentile(field,95)
+    print("Using threshold: ",str(thresh))
+    mask = binary_mask(field, thresh)
+    ds = xr.Dataset({"mask":mask})
+
+    #If angle_ds is provided, add to kwargs to pass to filtering
+    if angle_ds is not None:
+        kwargs["angle_ds"] = angle_ds.compute()
+
+    #If lsm is provided, add to kwargs to pass to filtering
+    if lsm is not None:
+        kwargs["lsm"] = lsm.compute()
+    
+    #If ta is provided, re-chunk and combine with the mask dataset
+    if ta is None:
+        pass
+    else:
+        ta=ta.chunk({"time":1,"lat":-1,"lon":-1})
+        ds = xr.merge((ds,ta.rename("ta")))   
+
+    #If we have given a path to hourly change data, load it and combine with the mask dataset
+    if hourly_change_path is None:
+        pass
+    else:
+        hourly_change = xr.open_dataset(
+            hourly_change_path,chunks={"time":1,"lat":-1,"lon":-1}).sel(time=slice(t1,t2),lat=lat_slice,lon=lon_slice)
+        ds = xr.merge((ds,hourly_change))         
+
+    #We will apply the filtering using map_blocks. So first, need create a "template" from the first time step
+    template,props_df_template = filter_ds(ds.isel(time=0), kwargs)
+    template = template.chunk({"time":1}).reindex({"time":ds.time},fill_value=0).chunk({"time":1})
+
+    #Setup the output dafaframe for saving sea breeze object properties as csv files
+    initialise_props_df_output(props_df_out_path,props_df_template)
+
+    #Apply the filtering
+    filtered_mask = ds.map_blocks(
+        process_time_slice,        
+        template=template,
+        kwargs=kwargs)
+    
+    #Save the filtered mask if required
+    if save_mask:
+        filtered_mask.to_netcdf(filter_out_path)
+    
+    return filtered_mask
