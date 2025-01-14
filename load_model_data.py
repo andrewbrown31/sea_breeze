@@ -513,7 +513,7 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
     ## Input
     * lsm: xarray dataarray with a binary lsm, and lat lon info
 
-    * R: the distance at which the weighting function is changed from 1/p to 1/q (in km). See get_weights function
+    * R: the distance (in km) at which the weighting function is changed from 1/p to 1/q. See get_weights function. Should be approximately 4 times the grid spacing of the lsm
 
     * coast_dim_chunk_size: the size of the chunks over the coastline dimension
 
@@ -553,8 +553,8 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
         lon = lsm.lon.values
         lat = lsm.lat.values
         xx,yy = np.meshgrid(lon,lat)
-        xx = xx.astype(np.float16)
-        yy = yy.astype(np.float16)    
+        xx = xx.astype(np.float32)
+        yy = yy.astype(np.float32)    
 
         #Define coastline x,y indices from the coastline mask
         xl, yl = np.where(coast_label)
