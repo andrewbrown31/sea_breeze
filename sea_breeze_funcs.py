@@ -1,10 +1,6 @@
-from sea_breeze.coastline_funcs import rotate_u_v_coast, latlon_dist
 import numpy as np
 import xarray as xr
 import metpy.calc as mpcalc
-import metpy.units as units
-import scipy
-import tqdm
 import dask.array as da
 
 def load_angle_ds(path,lat_slice,lon_slice,chunks="auto"):
@@ -24,7 +20,7 @@ def load_angle_ds(path,lat_slice,lon_slice,chunks="auto"):
     return xr.open_dataset(path,chunks=chunks).sel(lat=lat_slice,lon=lon_slice)
 
 def calc_sbi(wind_ds,
-                    angle_ds,
+                    angle_da,
                     subtract_mean=False,
                     height_mean=False,
                     blh_da=None,
@@ -41,7 +37,7 @@ def calc_sbi(wind_ds,
     ### Input
     * wind_ds: An xarray dataset with "u" and "v" wind component variables, and a vertical coordinate "height" in metres
 
-    * angle_ds: An xarray dataset of coastline orientation angles (degrees from N) 
+    * angle_da: An xarray dataarray of coastline orientation angles (degrees from N) 
 
     * subtract_mean: Boolean option for whether to subtract the mean background wind, and calculate perturbation sbi and lbi. Currently using an arithmatic mean over mean_heights layer
 
@@ -76,7 +72,7 @@ def calc_sbi(wind_ds,
         wind_ds["v"] = wind_ds["v"] - v_mean
 
     #Convert coastline orientation angle to the angle perpendicular to the coastline (pointing away from coast. from north)
-    theta = (((angle_ds.angle_interp+180)%360-90)%360)
+    theta = (((angle_da+180)%360-90)%360)
 
     #Calculate wind directions (from N) for low level (alpha) and all levels (beta)
     def compute_wind_direction(u, v):
@@ -188,7 +184,7 @@ def calc_sbi(wind_ds,
     
     return sbi_ds
 
-def moisture_flux_gradient(q, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"):
+def moisture_flux_gradient(q, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
 
     """
     Calculate d(qu)/dt
@@ -200,7 +196,7 @@ def moisture_flux_gradient(q, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"
 
     * v: xarray dataarray of v winds in m/s
 
-    * angle_ds: xarray dataset containing coastline angles ("angle_interp")
+    * angle_da: xarray dataset containing coastline angles ("angle_interp")
 
     ## Output:
     * xarray dataset
@@ -215,7 +211,7 @@ def moisture_flux_gradient(q, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"
     q = q * 1000
     
     #Define angle of coastline orientation from N
-    theta=angle_ds.angle_interp 
+    theta=angle_da 
     
     #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
     rotated_angle=(((theta)%360-90)%360) + 90   
@@ -229,9 +225,16 @@ def moisture_flux_gradient(q, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"
     #Calculate the rate of change
     dqu_dt = (vprime*q).differentiate("time",datetime_unit="s")
 
-    return xr.Dataset({"dqu_dt":dqu_dt})
+    #Convert to xr dataset and assign attributes
+    ds = xr.Dataset({"dqu_dt":dqu_dt})
+    ds["dqu_dt"] = ds["dqu_dt"].assign_attrs(
+        units = "g/kg/m/(s^2)",
+        long_name = "Moisture flux rate of change",
+        description = "Rate of change of onshore moisture flux gradient (dqu/dt).")      
 
-def hourly_change(q, t, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"):
+    return ds
+
+def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
 
     """
     Calculate hourly changes in q, t, and onshore wind speed. Use thresholds on each to define candidate sea breezes 
@@ -245,7 +248,7 @@ def hourly_change(q, t, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"):
 
     * v: xarray dataarray of v winds in m/s
 
-    * angle_ds: xarray dataset containing coastline angles ("angle_interp")
+    * angle_da: xarray dataset containing coastline angles ("angle_interp")
 
     ## Output:
     * xarray dataset
@@ -261,7 +264,7 @@ def hourly_change(q, t, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"):
     q = q * 1000
     
     #Define angle of coastline orientation from N
-    theta=angle_ds.angle_interp 
+    theta=angle_da 
     
     #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
     rotated_angle=(((theta)%360-90)%360) + 90   
@@ -282,11 +285,25 @@ def hourly_change(q, t, u, v, angle_ds, lat_chunk="auto", lon_chunk="auto"):
     if "height" in list(wind_change.coords.keys()):        
         t_change = t_change.drop_vars("height")
 
-    return xr.Dataset(
+    ds = xr.Dataset(
         {"wind_change":wind_change,
          "q_change":q_change,
          "t_change":t_change,
             })
+    ds["wind_change"] = ds["wind_change"].assign_attrs(
+        units = "m/s/h",
+        long_name = "Onshore wind speed rate of change",
+        description = "Rate of change of onshore wind speed in m/s/h.")
+    ds["t_change"] = ds["t_change"].assign_attrs(
+        units = "K/h",
+        long_name = "Local temperature rate of change.",
+        description = "Rate of change of temperature.")      
+    ds["q_change"] = ds["q_change"].assign_attrs(
+        units = "g/kg/h",
+        long_name = "Local specific humidity rate of change.",
+        description = "Rate of change of specific humidity.")
+    
+    return ds
 
 def kinematic_frontogenesis(q,u,v):
 
@@ -351,7 +368,7 @@ def kinematic_frontogenesis(q,u,v):
 
     return xr.Dataset({"F":F})
 
-def coast_relative_frontogenesis(q,u,v,angle_ds):
+def coast_relative_frontogenesis(q,u,v,angle_da):
 
     """
     This function calculates 2d shearing and confluence in the moisture field, using a wind field that has been rotated to be coastline-relative.
@@ -363,7 +380,7 @@ def coast_relative_frontogenesis(q,u,v,angle_ds):
 
     * v: xarray dataarray of v winds in m/s
 
-    * angle_ds: xarray dataset containing coastline angles ("angle_interp")
+    * angle_da: xarray dataset containing coastline angles ("angle_interp")
 
     ## Output:
     * xarray dataset with variables of "shearing" and "confluence". These describe the changes in the moisture gradient due to strecthing and shearing relative to the coastline.
@@ -391,7 +408,7 @@ def coast_relative_frontogenesis(q,u,v,angle_ds):
             chunk({"lat":q.chunksizes["lat"][0], "lon":q.chunksizes["lon"][0]})
 
     #Define angle of coastline orientation from N
-    theta=angle_ds.angle_interp 
+    theta=angle_da 
 
     #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
     rotated_angle=(((theta)%360-90)%360) + 90   
@@ -432,9 +449,13 @@ def coast_relative_frontogenesis(q,u,v,angle_ds):
     shearing = dq_da * duprime_dc
     
     #Format for output and calculate the shearing plus confluence
-    out =  xr.Dataset({
+    out = xr.Dataset({
         "Fc":xr.DataArray((confluence+shearing) * 1.08e9,coords=q.coords)
         })
+    out["Fc"] = out["Fc"].assign_attrs(
+        units = "g/kg/100km/3hr",
+        long_name = "Coastline-relative moisture frontogenesis",
+        description = "2d kinematic moisture frontogenesis parameter calculated using coastline-relative winds and specific humidity.")  
 
     return out
 
