@@ -110,13 +110,14 @@ def calc_sbi(wind_ds,
         output_dtypes=[float],  
     )        
 
-    #Mask to zero everywhere except for the following conditions
+    #Mask to zero everywhere except for the following conditions. Keep masked if angles are nans
     def sbi_conditions(sbi, alpha, beta, theta):
         sb_cond = ( (np.cos(np.deg2rad((alpha - theta)))>0), #Low level flow onshore
             (np.cos(np.deg2rad(beta - (theta+180)))>0), #Upper level flow offshore
             (np.cos(np.deg2rad(alpha + 180 - beta))>0) #Upper level flow opposing
                   )
-        return xr.where(sb_cond[0] & sb_cond[1] & sb_cond[2], sbi, 0)
+        sbi_cond = xr.where(sb_cond[0] & sb_cond[1] & sb_cond[2], sbi, 0)
+        return xr.where(np.isnan(theta),np.nan,sbi_cond)
     
     sbi = xr.apply_ufunc(
         sbi_conditions,
@@ -128,7 +129,7 @@ def calc_sbi(wind_ds,
         output_dtypes=[float],  
     )        
 
-    #Return the max over some height. Either defined statically or using boundary layer height
+    #Return the max over some height, keeping masked if angles are nans. Height layer either defined statically or using boundary layer height
     time_dim = wind_ds.u.get_axis_num("time")
     lat_dim = wind_ds.u.get_axis_num("lat")
     lon_dim = wind_ds.u.get_axis_num("lon")
@@ -147,6 +148,7 @@ def calc_sbi(wind_ds,
         sbi = xr.where((wind_ds.height_var <= blh_da),sbi,0)
     else:
         raise ValueError("Invalid height method")
+    sbi = xr.where(np.isnan(theta),np.nan,sbi)
 
     #Height of max sbi (where the return flow most opposes the low level flow)
     sbi_max_h = sbi.idxmax(dim=vert_coord)
