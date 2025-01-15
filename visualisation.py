@@ -3,6 +3,7 @@ from sys import stdout
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import matplotlib.animation as animation
+from sea_breeze import sea_breeze_filters
 
 def plot_pcolormesh(da,vmin=None,vmax=None,save=True,fname="temp",cmap="viridis"):
     plt.figure(figsize=(10,5))
@@ -52,10 +53,21 @@ def animate_pcolormesh(datasets, figsize=(20,5), rows=None, cols=None, vmins=Non
 if __name__ == "__main__":
 
     #Load data
-    barra_r = xr.open_dataset("/g/data/gb02/ab4502/sea_breeze_detection/barra_r/Fc_201601010000_201601312300.nc")
-    era5 = xr.open_dataset("/g/data/gb02/ab4502/sea_breeze_detection/era5/Fc_201601010000_201601312300.nc")
-    data = [barra_r["Fc"].isel(time=slice(0,10)),
-            era5["Fc"].isel(time=slice(0,10))]
+    barra_r = xr.open_dataset("/g/data/gb02/ab4502/sea_breeze_detection/barra_r/Fc_201601010000_201601312300.nc").isel(time=slice(0,24))
+    # era5 = xr.open_dataset("/g/data/gb02/ab4502/sea_breeze_detection/era5/Fc_201601010000_201601312300.nc")
+    # data = [barra_r["Fc"].isel(time=slice(0,10)),
+    #         era5["Fc"].isel(time=slice(0,10))]
+
+    filtered_mask = sea_breeze_filters.filter_ds_driver(
+        barra_r.Fc,
+        time_filter=False,
+        p=99
+)
+    
+    data = [
+        barra_r.Fc,
+        filtered_mask.mask
+    ]
 
     #Animate Fc
     animate_pcolormesh(
@@ -63,8 +75,8 @@ if __name__ == "__main__":
         rows=1,
         cols=2,
         figsize=(20,5),
-        vmins=[-20,-20],
-        vmaxs=[20,20],
-        titles=["BARRA-R","ERA5"],
-        fname="barra_r_era5_Fc_20160101_20160131",
-        cmaps=["RdBu","RdBu"])
+        vmins=[-filtered_mask.mask.threshold[0],0],
+        vmaxs=[filtered_mask.mask.threshold[0],1],
+        titles=["BARRA-R","BARRA-R sea breezes"],
+        fname="barra_r_Fc_sb_20160101_20160131",
+        cmaps=["RdBu","Blues"])
