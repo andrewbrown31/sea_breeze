@@ -14,7 +14,7 @@ if __name__ == "__main__":
     _, lsm = load_model_data.load_barra_static("AUS-11",lon_slice,lat_slice)
     angles = load_model_data.get_coastline_angle_kernel(
         lsm,
-        R=20,
+        R=24,
         compute=True,
         latlon_chunk_size=20,
         save=True,

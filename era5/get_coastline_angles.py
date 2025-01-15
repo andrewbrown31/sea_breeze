@@ -13,7 +13,7 @@ if __name__ == "__main__":
     _, lsm, cl = load_model_data.load_era5_static(lon_slice,lat_slice,"2016-01-01 00:00","2016-01-01 00:00")
     load_model_data.get_coastline_angle_kernel(
         load_model_data.remove_era5_inland_lakes(lsm,cl),
-        R=20,
+        R=50,
         compute=True,
         latlon_chunk_size=50,
         save=True,
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     era5_angles = load_model_data.get_coastline_angle_kernel(
         load_model_data.remove_era5_inland_lakes(
             era5_lsm,era5_cl),
-        R=20,
+        R=50,
         compute=True,
         latlon_chunk_size=10,
         save=True,
