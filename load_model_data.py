@@ -513,7 +513,7 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
     ## Input
     * lsm: xarray dataarray with a binary lsm, and lat lon info
 
-    * R: the distance (in km) at which the weighting function is changed from 1/p to 1/q. See get_weights function. Should be approximately 4 times the grid spacing of the lsm
+    * R: the distance (in km) at which the weighting function is changed from 1/p to 1/q. See get_weights function. Should be approximately 2 times the grid spacing of the lsm
 
     * coast_dim_chunk_size: the size of the chunks over the coastline dimension
 
@@ -640,6 +640,50 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
 
         #Do the interpolation across the coastline
         angle_ds = interpolate_angles(angle_ds)
+        angle_ds = interpolate_variance(angle_ds)
+
+        #Attributes
+        angle_ds["angle"] = angle_ds["angle"].assign_attrs(
+            units = "degrees",
+            long_name = "Angle of coastline orientation",
+            description = "The angle of dominant coastline orientation in degrees from North. Points with a dominant north-south coastline with ocean to the east will have an angle of 0 degrees. The dominant coastline for each point is determined by the weighted mean of the angles between that point and all coastline points in the domain. The weighting function is an inverse parabola to distance R, then decreases by distance**4. The weights are set to zero at a distance of 2000 km, and are undefined at the coast."
+            )
+        
+        angle_ds["variance"] = angle_ds["variance"].assign_attrs(
+            units = "[0,1]",
+            long_name = "Variance of coastline angles",
+            description = "For each point, the variance of the coastline angles in the domain. This is a measure of how many coastlines are influencing a given point. A value of 0 indicates that coastlines are generally in agreement, and a value of 1 indicates that the point is influenced by coastlines in all directions."
+            )
+        
+        angle_ds["coast"] = angle_ds["coast"].assign_attrs(
+            units = "[0,1]",
+            long_name = "Coastline mask",
+            description = "A binary mask of the coastline determined from the land-sea mask. 1 indicates a coastline point, and 0 indicates a non-coastline point."
+            )
+        
+        angle_ds["min_coast_dist"] = angle_ds["min_coast_dist"].assign_attrs(
+            units = "km",
+            long_name = "Minimum distance to the coast",
+            description = "The minimum distance to the coast for each point in the domain."
+            )
+        
+        angle_ds["angle_interp"] = angle_ds["angle_interp"].assign_attrs(
+            units = "degrees",
+            long_name = "Interpolated coastline orientation",
+            description = "The angle of dominant coastline orientation in degrees from North. Points with a dominant north-south coastline with ocean to the east will have an angle of 0 degrees. The dominant coastline for each point is determined by the weighted mean of the angles between that point and all coastline points in the domain. The weighting function is an inverse parabola to distance R, then decreases by distance**4. The weights are set to zero at a distance of 2000 km, and are undefined at the coast, where linear interpolation is then done."
+            )
+        
+        angle_ds["variance_interp"] = angle_ds["variance_interp"].assign_attrs(
+            units = "[0,1]",
+            long_name = "Interpolated variance of coastline angles",
+            description = "For each point, the variance of the coastline angles in the domain. This is a measure of how many coastlines are influencing a given point. A value of 0 indicates that coastlines are generally in agreement, and a value of 1 indicates that the point is influenced by coastlines in all directions. The variance is undefined at the coast, and here the variance is interpolated across the coastline."
+            )
+        
+        angle_ds = angle_ds.assign_attrs(
+            description = "Dataset of coastline angles and variance",
+            acknowledgmements = "This method was developed with help from Ewan Short and Jarrah Harrison-Lofthouse.",
+            R_km = str(R)
+            )
 
     else:
 
@@ -683,5 +727,22 @@ def interpolate_angles(angle_ds):
 
     angle_ds = angle_ds.drop_vars(["mean_abs","mean_angles"])
     angle_ds["angle_interp"] = interpolated_angle_da
+
+    return angle_ds
+
+def interpolate_variance(angle_ds):
+
+    xx,yy = np.meshgrid(angle_ds.lon,angle_ds.lat)
+
+    points = angle_ds.variance.values.ravel()
+    valid = ~np.isnan(points)
+    points_valid = points[valid]
+    xx_rav, yy_rav = xx.ravel(), yy.ravel()
+    xxv = xx_rav[valid]
+    yyv = yy_rav[valid]
+    interpolated_variance = scipy.interpolate.griddata(np.stack([xxv, yyv]).T, points_valid, (xx, yy), method="linear").reshape(xx.shape)     
+    interpolated_variance_da = xr.DataArray(interpolated_variance,dims=angle_ds.dims,coords=angle_ds.coords)
+
+    angle_ds["variance_interp"] = interpolated_variance_da
 
     return angle_ds
