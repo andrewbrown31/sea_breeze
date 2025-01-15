@@ -22,7 +22,7 @@ class Mask_Options:
             "orientation_filter":False,
             "aspect_filter":True,
             "area_filter":True,
-            "time_filter":True,
+            "time_filter":False,
             "dist_to_coast_filter":False,
             "land_sea_temperature_filter":False,
             "temperature_change_filter":False,
@@ -32,10 +32,11 @@ class Mask_Options:
 
         self.thresholds = {
             "orientation_tol":30,                     #Within 30 degrees of coastline
-            "area_thresh":1500,                       #Area of 1500 km^2 or greater
+            "area_thresh_km":50,                      #Area of 50 km^2 or greater
+            "area_thresh_pixels":20,                  #Area of 10 pixels or greater
             "aspect_thresh":3,                        #Aspect ratio of 3 or greater
-            "hour_min_lst":12,                        #LST hour must be greater than or equal to 12
-            "hour_max_lst":23,                        #LST hour must be less than or equal to 23
+            "hour_min_lst":9,                         #LST hour must be greater than or equal to 12
+            "hour_max_lst":22,                        #LST hour must be less than or equal to 23
             "land_sea_temperature_diff_thresh":0,     #Land sea temperature difference must be greater than zero
             "temperature_change_thresh":0,            #Temperature change must be less than zero
             "humidity_change_thresh":0,               #Humidity change must be greater than zero
@@ -44,6 +45,7 @@ class Mask_Options:
         
         self.options = {
             "land_sea_temperature_radius":50,         #Radius of the rolling maximum filter for land sea temperature difference (km)
+            "area_filter_units":"pixels"              #Is area filtered by pixels or kms? Either 'pixels' or 'kms'
         }
 
     def set_options(self,kwargs):
@@ -61,15 +63,21 @@ class Mask_Options:
     def __str__(self):
         return f"Filters: {self.filters} \n Thresholds: {self.thresholds}"
 
-def percentile(field,p=95):
+def percentile(field,p=95,skipna=False):
 
     """
-    From an xarray dataarray, calculate the pth percentile of the field, using dask.
+    From an xarray dataarray, calculate the pth percentile of the field
+    
+    The default here is to use dask. But if we want to skip nans, then the easier option is to use the climtas module.
     """
-    print("Re-shaping field for percentile calculation...")
+    #Re-shape field for percentile calculation.
     field_stacked = field.stack(z=list(field.dims))
-    print("Calculating percentile...")
-    return np.array(da.percentile(da.array(field_stacked),p))[0]
+    
+    if skipna:
+        import climtas
+        return da.array(climtas.blocked.approx_percentile(field_stacked, dim="z", q=p, skipna=True))
+    else:
+        return da.percentile(da.array(field_stacked),p)
 
 def binary_mask(field,thresh):
 
@@ -80,7 +88,7 @@ def binary_mask(field,thresh):
     """
     mask = (field>thresh)*1
     mask = mask.assign_attrs({"threshold":thresh})
-    return mask
+    return xr.Dataset({"mask":mask})
 
 def fuzzy_function(x, x1=0, y1=0, y2=1, D=2):
 
@@ -95,7 +103,7 @@ def fuzzy_function(x, x1=0, y1=0, y2=1, D=2):
     * D: scaling factor for x2
     """
 
-    x2 = (x.max() / D).values
+    x2 = (x.max() / D)
     
     f_x = y1 + ( ( y2 - y1 ) / ( x2 - x1 ) ) * ( x - x1 )
     f_x = xr.where(x <= x1, y1, f_x)
@@ -103,7 +111,7 @@ def fuzzy_function(x, x1=0, y1=0, y2=1, D=2):
 
     return f_x
 
-def fuzzy_mask(wind_change,q_change,t_change,thresh,combine_method="product"):
+def fuzzy_function_combine(wind_change,q_change,t_change,combine_method="product"):
 
     """
     From Coceal et al. 2018, a fuzzy logic method for identifying sea breezes. 
@@ -129,15 +137,19 @@ def fuzzy_mask(wind_change,q_change,t_change,thresh,combine_method="product"):
 
     #Combine the fuzzy functions
     if combine_method=="product":
-        mask = (wind_fuzzy * q_fuzzy * t_fuzzy) > thresh
+        mask = (wind_fuzzy * q_fuzzy * t_fuzzy)
     elif combine_method=="mean":
-        mask = ((wind_fuzzy + q_fuzzy + t_fuzzy) / 3) > thresh
+        mask = ((wind_fuzzy + q_fuzzy + t_fuzzy) / 3)
     else:
         raise ValueError("combine_method must be 'product' or 'mean'")
 
-    mask = mask.assign_attrs({"thresh":thresh,"combine_method":combine_method})
+    mask = mask.assign_attrs({"combine_method":combine_method})
+    mask = mask.assign_attrs(
+        units = "[0,1]",
+        long_name = "Fuzzy sea breeze detection algorithm",
+        description = "Fuzzy sea breeze detection algorithm using the rate of change of moisture, temperature and onshore wind speed, following Coceal et al. (2018)")      
 
-    return mask*1
+    return mask
 
 def initialise_props_df_output(props_df_out_path,props_df_template):
     """
@@ -160,21 +172,25 @@ def circmean_wrapper(data):
     """
     return scipy.stats.circmean(data, low=-90, high=90)
 
-def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind_change=None,props_df_output_path=None,output_land_sea_temperature_diff=False,**kwargs):
+def filter_ds(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_sea_temperature_diff=False,**kwargs):
     
     """
+    ## Description
+    Take a binary sea breeze mask and identify objects, then filter it for sea breezes based on several conditions related to those objects. Works for a 2d lat/lon xarray dataset, but can be extended to work with a time dimension using map_blocks (see process_time_slice function and filter_ds_driver).
+
     ## Input
     ### Required
-    * mask: binary mask of sea breeze objects, as an xarray dataarray
-    * time: time of the data in the form %Y-%m-%d %H:%M
+    * ds: xarray dataset with a variable "mask", containing a 2d binary mask of sea breeze objects, as an xarray dataarray. May also contain the following variables with the same shape and coordinates as mask as xarray dataarrays:
+        * "ta" (surface temperature)
+        * "t_change" (temperature change, see sea_breeze_funcs.hourly_change)
+        * "q_change" (specific humidity change, see sea_breeze_funcs.hourly_change)
+        * "wind_change" (onshore wind speed change, see sea_breeze_funcs.hourly_change)
 
     ### Optional
     * angle_ds: xarray dataset of coastline angles created by get_coastline_angles.py
-    * ta: xarray dataarray of surface temperatures
     * lsm: xarray dataarray of the land-sea mask
-    * t_change: xarray datarray of temperature change
-    * q_change: xarray datarray of specific humidity change
-    * wind_change: xarray datarray of onshore wind speed change
+    * props_df_output_path: path to output a csv file of the properties of each object
+    * output_land_sea_temperature_diff: output the land sea temperature difference as a dataarray (bool, default False)
     * **kwargs: options for filtering the sea breeze objects (see below)
 
     ## Options (kwargs)
@@ -187,20 +203,21 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
         - Requires angle_ds to be provided
     * time_filter: Filter candidate objects based on local solar time True/False (default True)
     * land_sea_temperature_filter: Filter candidate objects based on land sea temperature difference True/False (default False)
-        - Requires ta and lsm to be provided
+        - Requires ta as a variable in ds, and lsm to be provided
     * temperature_change_filter: Filter candidate objects based on mean local temperature decrease True/False (default False)
-        - Requires t_change to be provided
+        - Requires t_change to be provided as a variable in ds
     * humidity_change_filter: Filter candidate objects based on mean local humidity increase True/False (default False)
-        - Requires q_change to be provided
+        - Requires q_change to be provided as a variable in ds
     * wind_change_filter: Filter candidate objects based on mean local onshore wind speed increase True/False (default False)
-        - Requires wind_change to be provided
+        - Requires wind_change to be provided as a variable in ds
 
     ### Thresholds
     * orientation_tol: Tolerance in degrees for orientation filter (default 30 degrees)
-    * area_thresh: Minimum area in km^2 for area filter (defailt 1500 km^2)
+    * area_thresh: Minimum area in km^2 for area filter if area_filter_units='kms' (defailt 50 km^2)
+    * area_thresh_pixels: Minimum area in pixels for area filter if area_filter_units='pixels' (defailt 20)
     * aspect_thresh: Minimum aspect ratio for aspect filter (default 3)
-    * hour_min_lst: Minimum local solar time in hours for time filter (default 12)
-    * hour_max_lst: Maximum local solar time in hours for time filter (default 23)
+    * hour_min_lst: Minimum local solar time in hours for time filter (default 9)
+    * hour_max_lst: Maximum local solar time in hours for time filter (default 22)
     * land_sea_temperature_diff_thresh: Minimum land sea temperature difference for land sea temperature filter (default 0)
     * distance_to_coast_thresh: Maximum distance to coast in km for distance to coast filter (default 300 km)
     * temperature_change_thresh: Maximum temperature change for temperature change filter, same units as t_change (default 0)
@@ -209,23 +226,17 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
 
     ### Other options
     * land_sea_temperature_radius: Radius of the rolling maximum/mean filter for land sea temperature difference, in km (default 50 km). NOTE that this radius is converted to pixels by using the mean grid spacing in x and y, and will therefore vary with latitude.
+    * area_filter_units: Is area filtered by pixels or kms? Either 'pixels' or 'kms'
 
     ## Output
     * mask: binary mask of sea breeze objects after filtering
 
-    ## Description
-    Take a binary sea breeze mask and identify objects, then filter it for sea breezes based on several conditions related to those objects
-
-    - Area (number of pixels) (done)
-    - Eccentricity or aspect ratio (done)
-    - Orientation of object relative to the coastline (done)
-    - Within some distance to the coast (done)
-    - Positive land-sea temperature contrast/gradient (done)
-    - Local time (done - criteria is that the local time is between 12:00 and 23:59 local solar time)
-
-    - TODO Propagation speed or persistance? Note this is not straightforward. Will need to be in a separate function with input having a time dimension.
+    TODO Propagation speed or persistance? Note this is not straightforward. Will need to be in a separate function with input having a time dimension.
 
     """
+
+    if ds.mask.ndim > 2:
+        raise ValueError("mask must be a 2D array (of lat and lon). If you have a time dimension, use map_blocks to process each time slice. See process_time_slice function or filter_ds_driver")
 
     #Set options
     mask_options = Mask_Options().set_options(kwargs)
@@ -249,14 +260,14 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
     pixel_area = xr.DataArray(pixel_area,coords=ds["mask"].coords,dims=ds["mask"].dims)
 
     #For each object create lists of relevant properties
-    labs = np.array([region_props[i].label for i in np.arange(len(region_props))])                           #Object label number
-    eccen = [region_props[i].eccentricity for i in np.arange(len(region_props))]                             #Eccentricity
-    area = [region_props[i].area for i in np.arange(len(region_props))]                                      #Area
-    orient = np.rad2deg(np.array([region_props[i].orientation for i in np.arange(len(region_props))]))       #Orientation angle
-    major = np.array([region_props[i].axis_major_length for i in np.arange(len(region_props))])              #Major axis length
-    minor = np.array([region_props[i].axis_minor_length for i in np.arange(len(region_props))])              #Minor axis length
+    labs = np.array([region_props[i].label for i in np.arange(len(region_props))])                                    #Object label number
+    eccen = [region_props[i].eccentricity for i in np.arange(len(region_props))]                                      #Eccentricity
+    area = [region_props[i].area for i in np.arange(len(region_props))]                                               #Area
+    orient = np.rad2deg(np.array([region_props[i].orientation for i in np.arange(len(region_props))]))                #Orientation angle
+    major = np.array([region_props[i].axis_major_length for i in np.arange(len(region_props))])                       #Major axis length in pixels
+    minor = np.array([region_props[i].axis_minor_length for i in np.arange(len(region_props))])                       #Minor axis length in pixels
     centroid_lons = [lons[np.round(region_props[i].centroid[1]).astype(int)] for i in np.arange(len(region_props))]  
-    lst = [pd.to_datetime(time) + dt.timedelta(hours=l / 180 * 12) for l in centroid_lons]                   #Local solar time
+    lst = [pd.to_datetime(time) + dt.timedelta(hours=l / 180 * 12) for l in centroid_lons]                            #Local solar time based on centroid longitude
 
     #Create pandas dataframe with object properties, index by label number
     props_df = pd.DataFrame({
@@ -265,7 +276,7 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
         "orient":orient,
         "major":major,
         "minor":minor,
-        "lst":lst}, index=labs)        
+        "lst":pd.to_datetime(lst)}, index=labs)        
     props_df["aspect"] = props_df.major/props_df.minor
     
     #Create condition to keep objects
@@ -295,7 +306,12 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
     if mask_options.filters["area_filter"]:
         mean_pixel_area = pixel_area.groupby(labels_da.rename("label")).mean().to_series()
         props_df["area_km"] = props_df.area*mean_pixel_area
-        cond = cond & ( (props_df.area*mean_pixel_area) >= mask_options.thresholds["area_thresh"] )
+        if mask_options.options["area_filter_units"] == "pixels":
+            cond = cond & ( (props_df.area) >= mask_options.thresholds["area_thresh_pixels"] )
+        elif mask_options.options["area_filter_units"] == "kms":
+            cond = cond & ( (props_df.area_km) >= mask_options.thresholds["area_thresh_km"] )
+        else:
+            raise ValueError("'area_filter_units' must be either 'kms' or 'pixels'")
 
     #Filter objects based on distance to coast
     if mask_options.filters["dist_to_coast_filter"]:
@@ -328,7 +344,7 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
             props_df["mean_land_sea_temp_diff"] = mean_land_sea_temp_diff
             cond = cond & ( mean_land_sea_temp_diff > mask_options.thresholds["land_sea_temperature_diff_thresh"] ) 
         else:
-            raise ValueError("ta and lsm must be provided for land sea temperature filter")   
+            raise ValueError("ta must be in ds and lsm must be provided for land sea temperature filter")   
     
     #Filter objects based on local temperature decrease
     if mask_options.filters["temperature_change_filter"]:
@@ -338,7 +354,7 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
             props_df["mean_t_change"] = mean_t_change
             cond = cond & ( mean_t_change < mask_options.thresholds["temperature_change_thresh"] ) 
         else:
-            raise ValueError("t_change must be provided for temperature change filter")
+            raise ValueError("t_change must be provided in ds for temperature change filter")
         
     #Filter objects based on local humidity increase
     if mask_options.filters["humidity_change_filter"]:
@@ -348,7 +364,7 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
             props_df["mean_q_change"] = mean_q_change
             cond = cond & ( mean_q_change > mask_options.thresholds["humidity_change_thresh"] ) 
         else:
-            raise ValueError("q_change must be provided for humidity change filter")
+            raise ValueError("q_change must be provided in ds for humidity change filter")
         
     #Filter objects based on local onshore wind speed increase
     if mask_options.filters["wind_change_filter"]:
@@ -358,7 +374,7 @@ def filter_ds(ds,angle_ds=None,lsm=None,ta=None,t_change=None,q_change=None,wind
             props_df["mean_wind_change"] = mean_wind_change
             cond = cond & ( mean_wind_change > mask_options.thresholds["wind_change_thresh"] ) 
         else:
-            raise ValueError("wind_change must be provided for wind change filter")
+            raise ValueError("wind_change must be provided in ds for wind change filter")
 
     #Subset label dataframe based on these conditions
     props_df = props_df.loc[cond]
@@ -611,11 +627,153 @@ def land_sea_temperature_grad(ts,lsm,N,angle_ds,weighting="none",sigma=0.1):
 
     return land_minus_sea_grad    
 
-def filter_ds_driver(field_path,field_name,lat_slice,lon_slice,t1=None,t2=None,hourly_change_path=None,ta=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,**kwargs):
+def filter_ds_driver(field,p=95,hourly_change_ds=None,ta=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,skipna=False,**kwargs):
 
     """
-    Driver function for filter_ds.
+    Driver function for filter_ds that creates a binary mask from a sea breeze diagnostic field, and works with a time dimension using xr.map_blocks. Docstring copied and adapted from filter_ds:
+
+    ## Description
+    Take a sea breeze diagnostic field, then create a binary mask, then filter that mask for sea breeze objects based on several conditions related to those objects. Works for a 3d lat/lon/time field as an xarray dataset. The binary mask is created by taking exceedences of a percentile value as calculated from 'field'.
+
+    ## Input
+    ### Required
+    * field: xarray dataarray of a sea breeze diagnostic, with dims lat/lon/time. See sea_breeze.sea_breeze_funcs for diagnostic functions, as well as sea_breeze.sea_breeze_filters.fuzzy_function_combine.
+
+    ### Optional
+    * p: the percentile used to create a binary mask from field
+
+    * hourly_change_ds: an xarray dataset containing "t_change" (temperature change), "q_change" (specific humidity change) and "wind_change" (onshore wind speed change) as variables (as output from sea_breeze_funcs.hourly_change). Needed for temperature_change_filter/humidity_change_filter/wind_change_filter
+
+    * ta: xarray dataarray of surface temperature, with the same coords and dims as field. Needed for land_sea_temperature_filter
+
+    * lsm: xarray dataarray of the land-sea mask. Needed for land_sea_temperature_filter
+
+    * angle_ds: xarray dataset of coastline angles created by sea_breeze.load_model_data.get_coastline_angles_kernel. Needed for orientation_filter, dist_to_coast_filter.
+
+    * save_mask: whether to save the output mask dataset to disk
+
+    * filter_out_path: if save_mask=True, then where to save the filtered mask output
+
+    * props_df_output_path: path to output a csv file of the properties of each object    
+
+    * skip_na: if the field contains nans, then the calculation of the field percentile will ignore nans if this is set to true. Uses the climtas package.
+
+    * **kwargs: options for filtering the sea breeze objects passed to filter_ds (see below)
+
+    ## Options (kwargs)
+
+    ### Filters
+    * orientation_filter: Filter candidate objects based on orientation parallel to the coastline True/False (default False). Requires angle_ds to be provided
+
+    * aspect_filter: Filter candidate objects based on aspect ratio True/False (default True)
+
+    * area_filter: Filter candidate objects based on area True/False (default True)
+
+    * dist_to_coast_filter: Filter candidate objects based on distance to the coast True/False (default False). Requires angle_ds to be provided
+
+    * time_filter: Filter candidate objects based on local solar time True/False (default True)
+
+    * land_sea_temperature_filter: Filter candidate objects based on land sea temperature difference True/False (default False). Requires ta and lsm to be provided
+
+    * temperature_change_filter: Filter candidate objects based on mean local temperature decrease True/False (default False). Requires t_change to be provided as a variable in hourly_change_ds.
+
+    * humidity_change_filter: Filter candidate objects based on mean local humidity increase True/False (default False). Requires q_change to be provided as a variable in hourly_change_ds.
+
+    * wind_change_filter: Filter candidate objects based on mean local onshore wind speed increase True/False (default False). Requires wind_change to be provided as a variable in hourly_change_ds.
+
+    * output_land_sea_temperature_diff: output the land sea temperature difference as a dataarray (bool, default False)        
+
+    ### Thresholds
+    * orientation_tol: Tolerance in degrees for orientation filter (default 30 degrees)
+    * area_thresh: Minimum area in km^2 for area filter if area_filter_units='kms' (defailt 50 km^2)
+    * area_thresh_pixels: Minimum area in pixels for area filter if area_filter_units='pixels' (defailt 20)
+    * aspect_thresh: Minimum aspect ratio for aspect filter (default 3)
+    * hour_min_lst: Minimum local solar time in hours for time filter (default 9)
+    * hour_max_lst: Maximum local solar time in hours for time filter (default 22)
+    * land_sea_temperature_diff_thresh: Minimum land sea temperature difference for land sea temperature filter (default 0)
+    * distance_to_coast_thresh: Maximum distance to coast in km for distance to coast filter (default 300 km)
+    * temperature_change_thresh: Maximum temperature change for temperature change filter, same units as t_change (default 0)
+    * humidity_change_thresh: Minimum humidity change for humidity change filter, same units as q_change (default 0)
+    * wind_change_thresh: Minimum wind change for onshore wind change filter, same units as wind_change (default 0)
+
+    ### Other options
+    * land_sea_temperature_radius: Radius of the rolling maximum/mean filter for land sea temperature difference, in km (default 50 km). NOTE that this radius is converted to pixels by using the mean grid spacing in x and y, and will therefore vary with latitude.
+    * area_filter_units: Is area filtered by pixels or kms? Either 'pixels' or 'kms'
+
+    ## Output
+    * mask: binary mask of sea breeze objects after filtering
+
+    TODO Propagation speed or persistance? Note this is not straightforward. Will need to be in a separate function with input having a time dimension.
+
     """
+
+    if save_mask:
+        if filter_out_path is None:
+            raise ValueError("filter_out_path must be provided if save_mask is True")
+
+    #Load sea breeze function from sea_breeze_funcs
+    field = field.chunk({"time":1,"lat":-1,"lon":-1})
+
+    #Mask based on percentile values
+    thresh = percentile(field,p=p,skipna=skipna).compute()
+    print("Using threshold: ",str(thresh))
+    ds = binary_mask(field, thresh)
+
+    #If angle_ds is provided, add to kwargs to pass to filtering
+    if angle_ds is not None:
+        kwargs["angle_ds"] = angle_ds.compute()
+
+    #If lsm is provided, add to kwargs to pass to filtering
+    if lsm is not None:
+        kwargs["lsm"] = lsm.compute()
+    
+    #If ta is provided, re-chunk and combine with the mask dataset
+    if ta is None:
+        pass
+    else:
+        ta=ta.chunk({"time":1,"lat":-1,"lon":-1})
+        ds = xr.merge((ds,ta.rename("ta")))   
+
+    #If we have given a path to hourly change data, load it and combine with the mask dataset
+    if hourly_change_ds is None:
+        pass
+    else:
+        hourly_change_ds =hourly_change_ds.chunk({"time":1,"lat":-1,"lon":-1})
+        ds = xr.merge((ds,hourly_change_ds))         
+
+    #We will apply the filtering using map_blocks. So first, need create a "template" from the first time step
+    if props_df_out_path is None:
+        props_df_out_path = "/scratch/gb02/ab4502/tmp/props_df.csv"
+    template,props_df_template = filter_ds(ds.isel(time=0), **kwargs)
+    template = template.chunk({"time":1}).reindex({"time":ds.time},fill_value=False).chunk({"time":1})
+
+    #Setup the output dafaframe for saving sea breeze object properties as csv files
+    initialise_props_df_output(props_df_out_path,props_df_template)
+
+    #Apply the filtering
+    filtered_mask = ds.map_blocks(
+        process_time_slice,        
+        template=template,
+        kwargs=kwargs)
+
+    #Set some extra attributes
+    filtered_mask["mask"] = filtered_mask["mask"].assign_attrs({"threshold":ds.mask.threshold})
+    
+    #Save the filtered mask if required
+    if save_mask:
+        filtered_mask.to_netcdf(filter_out_path)
+    
+    return filtered_mask
+
+def filter_ds_driver_from_disk(field_path,field_name,lat_slice,lon_slice,t1=None,t2=None,hourly_change_path=None,ta=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,skipna=False,**kwargs):
+
+    """
+    Driver function for filter_ds, loading data from disk
+    """
+
+    if save_mask:
+        if filter_out_path is None:
+            raise ValueError("filter_out_path must be provided if save_mask is True")
 
     #Load sea breeze function from sea_breeze_funcs
     field = xr.open_dataset(field_path,chunks={"time":1,"lat":-1,"lon":-1})[field_name].sel(lat=lat_slice,lon=lon_slice)
@@ -628,10 +786,9 @@ def filter_ds_driver(field_path,field_name,lat_slice,lon_slice,t1=None,t2=None,h
         t2 = field.time.max().values
 
     #Mask based on percentile values
-    thresh = percentile(field,95)
+    thresh = percentile(field,95,skipna=False)
     print("Using threshold: ",str(thresh))
-    mask = binary_mask(field, thresh)
-    ds = xr.Dataset({"mask":mask})
+    ds = binary_mask(field, thresh)
 
     #If angle_ds is provided, add to kwargs to pass to filtering
     if angle_ds is not None:
@@ -657,6 +814,8 @@ def filter_ds_driver(field_path,field_name,lat_slice,lon_slice,t1=None,t2=None,h
         ds = xr.merge((ds,hourly_change))         
 
     #We will apply the filtering using map_blocks. So first, need create a "template" from the first time step
+    if props_df_out_path is None:
+        props_df_out_path = "/scratch/gb02/ab4502/tmp/props_df.csv"
     template,props_df_template = filter_ds(ds.isel(time=0), kwargs)
     template = template.chunk({"time":1}).reindex({"time":ds.time},fill_value=0).chunk({"time":1})
 
