@@ -307,6 +307,71 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
     
     return ds
 
+def fuzzy_function(x, x1=0, y1=0, y2=1, D=2):
+
+    """
+    Fuzzy logic function from Coceal et al. 2018 (https://doi.org/10.1002/asl.846)
+
+    ## Input
+    * x: xarray dataarray of input values
+    * x1: x value at which the function starts to increase
+    * y1: y value for x <= x1
+    * y2: y value for x >= x2, where x2 is the maximum value of x divided by D
+    * D: scaling factor for x2
+    """
+
+    # x_stacked = da.array(x).flatten()
+    # x2 = da.percentile(x_stacked,100,internal_method="tdigest") / D
+
+    x2 = (x.max() / D).persist()
+    #x2 = 1
+    
+    f_x = y1 + ( ( y2 - y1 ) / ( x2 - x1 ) ) * ( x - x1 )
+    f_x = xr.where(x <= x1, y1, f_x)
+    f_x = xr.where(x >= x2, y2, f_x)
+
+    return f_x
+
+def fuzzy_function_combine(wind_change,q_change,t_change,combine_method="product"):
+
+    """
+    From Coceal et al. 2018, a fuzzy logic method for identifying sea breezes. 
+
+    ## Input
+    * wind_change: xarray dataarray of wind speed change in the onshore direction
+    * q_change: xarray dataarray of specific humidity change
+    * t_change: xarray dataarray of temperature change
+    * combine_method: method for combining the fuzzy functions. Can be "product" or "mean". Note that Coceal et al. 2018 use the mean method.
+
+    ## Output
+    * mask: binary mask of candidate sea breeze objects
+
+    Note that t_change is assumed to be negative. For example, a sea breeze front results in a negative temperature change.
+
+    Coceal, O., Bohnenstengel, S. I., & Kotthaus, S. (2018). Detection of sea-breeze events around London using a fuzzy-logic algorithm. Atmospheric Science Letters, 19(9). https://doi.org/10.1002/asl.846
+    """
+
+    #Calculate the fuzzy functions for each variable
+    wind_fuzzy = fuzzy_function(wind_change)
+    q_fuzzy = fuzzy_function(q_change)
+    t_fuzzy = fuzzy_function(-t_change)
+
+    #Combine the fuzzy functions
+    if combine_method=="product":
+        mask = (wind_fuzzy * q_fuzzy * t_fuzzy)
+    elif combine_method=="mean":
+        mask = ((wind_fuzzy + q_fuzzy + t_fuzzy) / 3)
+    else:
+        raise ValueError("combine_method must be 'product' or 'mean'")
+
+    mask = mask.assign_attrs({"combine_method":combine_method})
+    mask = mask.assign_attrs(
+        units = "[0,1]",
+        long_name = "Fuzzy sea breeze detection algorithm",
+        description = "Fuzzy sea breeze detection algorithm using the rate of change of moisture, temperature and onshore wind speed, following Coceal et al. (2018)")      
+
+    return mask
+
 def kinematic_frontogenesis(q,u,v):
 
     """
