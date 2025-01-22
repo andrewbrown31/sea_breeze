@@ -16,10 +16,10 @@ if __name__ == "__main__":
 
     #Set up paths to sea_breeze_funcs data output and other inputs
     path = "/g/data/gb02/ab4502/"
-    fc_field_path = path + "sea_breeze_detection/barra_r/Fc_201601010000_201601312300.nc"
-    f_field_path = path + "sea_breeze_detection/barra_r/F_201601010000_201601312300.nc"
-    hourly_change_path = path+ "sea_breeze_detection/barra_r/F_hourly_201601010000_201601312300.nc"
-    angle_ds_path = path + "coastline_data/barra_r.nc"
+    fc_field_path = path + "sea_breeze_detection/barra_c/Fc_201601010000_201601312300.nc"
+    f_field_path = path + "sea_breeze_detection/barra_c/F_201601010000_201601312300.nc"
+    hourly_change_path = path+ "sea_breeze_detection/barra_c/F_hourly_201601010000_201601312300.nc"
+    angle_ds_path = path + "coastline_data/barra_c.nc"
     
     #Set up domain bounds and variable name from field_path dataset
     t1 = "2016-01-01 00:00"
@@ -56,10 +56,10 @@ if __name__ == "__main__":
         hourly_change_path,chunks="auto"
         ).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
     ta = load_model_data.load_barra_variable(
-        "tas",t1,t2,"AUS-11","1hr",lat_slice,lon_slice
+        "tas",t1,t2,"AUST-04","1hr",lat_slice,lon_slice
         )
     _,lsm = load_model_data.load_barra_static(
-        "AUS-11",lon_slice,lat_slice
+        "AUST-04",lon_slice,lat_slice
         )
     angle_ds = load_model_data.get_coastline_angle_kernel(
         compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
@@ -78,12 +78,12 @@ if __name__ == "__main__":
 
         #Set up output paths
         props_df_out_path = path+\
-            "sea_breeze_detection/barra_r/props_df_"+\
+            "sea_breeze_detection/barra_c/props_df_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".csv" 
         filter_out_path = path+\
-            "sea_breeze_detection/barra_r/filtered_mask_"+\
+            "sea_breeze_detection/barra_c/filtered_mask_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".nc"

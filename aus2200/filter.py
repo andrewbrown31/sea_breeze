@@ -16,10 +16,11 @@ if __name__ == "__main__":
 
     #Set up paths to sea_breeze_funcs data output and other inputs
     path = "/g/data/gb02/ab4502/"
-    fc_field_path = path + "sea_breeze_detection/barra_r/Fc_201601010000_201601312300.nc"
-    f_field_path = path + "sea_breeze_detection/barra_r/F_201601010000_201601312300.nc"
-    hourly_change_path = path+ "sea_breeze_detection/barra_r/F_hourly_201601010000_201601312300.nc"
-    angle_ds_path = path + "coastline_data/barra_r.nc"
+    fc_field_path = path + "sea_breeze_detection/aus2200/Fc_mjo-elnino_201601010000_201601312300.nc"
+    f_field_path = path + "sea_breeze_detection/aus2200/F_mjo-elnino_201601010000_201601312300.nc"
+    hourly_change_path = path+ "sea_breeze_detection/aus2200/F_hourly_mjo-elnino_201601010000_201601312300.nc"
+    sbi_path = path+ "sea_breeze_detection/aus2200/sbi_mjo-elnino_201601010100_201601312300.nc"
+    angle_ds_path = path + "coastline_data/aus2200.nc"
     
     #Set up domain bounds and variable name from field_path dataset
     t1 = "2016-01-01 00:00"
@@ -47,20 +48,25 @@ if __name__ == "__main__":
 
     #Load data for filtering: Fc, hourly_change, tas, lsm and coastline angles
     Fc = xr.open_dataset(
-        fc_field_path,chunks="auto"
-        ).Fc.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)) 
+        fc_field_path,chunks={"time":1,"lat":-1,"lon":-1}
+        ).Fc.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
     F = xr.open_dataset(
-        f_field_path,chunks="auto"
-        ).F.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)) 
+        f_field_path,chunks={"time":1,"lat":-1,"lon":-1}
+        ).F.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
+    sbi = xr.open_dataset(
+        sbi_path,chunks={"time":1,"lat":-1,"lon":-1}
+        ).sbi.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
     hourly_change_ds = xr.open_dataset(
-        hourly_change_path,chunks="auto"
+        hourly_change_path,chunks={"time":1,"lat":-1,"lon":-1}
         ).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
-    ta = load_model_data.load_barra_variable(
-        "tas",t1,t2,"AUS-11","1hr",lat_slice,lon_slice
+    ta = load_model_data.load_aus2200_variable(
+        "tas",t1,t2,"mjo-elnino",lon_slice,lat_slice,"10min",chunks="auto"
         )
-    _,lsm = load_model_data.load_barra_static(
-        "AUS-11",lon_slice,lat_slice
-        )
+    ta = ta.sel(time=ta.time.dt.minute==0).chunk({"time":1,"lat":-1,"lon":-1})
+    orog, lsm = load_model_data.load_aus2200_static(
+        "mjo-elnino",
+        lon_slice,
+        lat_slice)
     angle_ds = load_model_data.get_coastline_angle_kernel(
         compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
         )
@@ -72,18 +78,19 @@ if __name__ == "__main__":
         hourly_change_ds.t_change,
         combine_method="mean")
     
-    for field_name, field in zip(["fuzzy_mean","Fc","F"],[fuzzy,Fc,F]):
+    #for field_name, field in zip(["fuzzy_mean"],[fuzzy]):
+    for field_name, field in zip(["fuzzy_mean","Fc","F","sbi"],[fuzzy,Fc,F,sbi]):
     
         print(field_name)
 
         #Set up output paths
         props_df_out_path = path+\
-            "sea_breeze_detection/barra_r/props_df_"+\
+            "sea_breeze_detection/aus2200/props_df_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".csv" 
         filter_out_path = path+\
-            "sea_breeze_detection/barra_r/filtered_mask_"+\
+            "sea_breeze_detection/aus2200/filtered_mask_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".nc"
