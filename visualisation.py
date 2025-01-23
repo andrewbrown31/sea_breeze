@@ -2,11 +2,15 @@ import xarray as xr
 from sys import stdout
 import matplotlib.pyplot as plt
 import numpy as np
+import datetime as dt
 import cartopy.crs as ccrs
+import pandas as pd
 import matplotlib.animation as animation
-from sea_breeze import sea_breeze_funcs, utils
+from sea_breeze import sea_breeze_funcs, utils, load_obs
 from dask.distributed import Client
 import xmovie
+import os
+import glob
 
 def plot_pcolormesh(da,vmin=None,vmax=None,save=True,fname="temp",cmap="viridis"):
     plt.figure(figsize=(10,5))
@@ -269,7 +273,65 @@ def xmovie_animation_plotmasks_4models(ds,vmins,vmaxs,cmaps,field_titles=["Field
         overwrite_existing=True,
         parallel=False,
         progress=True,
-        framerate=5)         
+        framerate=5)     
+
+def plot_radar(ds,fig,tt,framedim,latitude,longitude,vmin,vmax,cmap,**kwargs):
+
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    c = ax.pcolormesh(longitude,latitude,ds.isel({framedim:tt}),vmin=vmin,vmax=vmax,cmap=cmap)
+    ax.set_title(ds.isel(time=tt).time.values)
+    fig.colorbar(c,extend="both")
+    ax.coastlines()
+    plt.close(fig)
+    
+    return None, None        
+
+def xmovie_animation_plot_radar(ds,latitude,longitude,vmin,vmax,cmap,outname=None):
+
+    mov = xmovie.Movie(
+        ds,
+        pixelwidth=1200,
+        pixelheight=1200,
+        plotfunc=plot_radar,
+        latitude=latitude,
+        longitude=longitude,
+        vmin=vmin,
+        vmax=vmax,
+        cmap=cmap,
+        input_check=False,
+    )
+    if outname is None:
+        outname = "animation"
+    mov.save(
+        "/scratch/gb02/ab4502/temp_figs/"+outname+".mp4",
+        overwrite_existing=True,
+        parallel=True,
+        progress=True,
+        framerate=5)  
+
+def radar_animation(rid,times,field,z):
+
+    #Load radar data
+    radar_ds = load_obs.load_radar_level1b(rid,times)
+
+    #Subset to every half an hour
+    #radar_ds = radar_ds.sel(time=np.in1d(radar_ds.time.dt.minute,[0,30]))
+    
+    #Get radar data coordinates
+    longitude = radar_ds.isel({"time":0}).longitude.values
+    latitude = radar_ds.isel({"time":0}).latitude.values
+
+    #Plot radar data
+    xmovie_animation_plot_radar(
+        radar_ds[field].sel(z=z).persist(),
+        latitude,
+        longitude,
+        vmin=-10,
+        vmax=10,
+        cmap="RdBu",
+        outname=rid+"_"+field+"_"+str(z)+"_"+times[0].strftime("%Y%m%d%H")+"_"+times[1].strftime("%Y%m%d%H")) 
+    
+    [os.remove(f) for f in glob.glob("/scratch/gb02/ab4502/radar/"+rid+"*_grid.nc")];
 
 def barra_r_animation(lat_slice,lon_slice,time_slice):
 
@@ -497,12 +559,21 @@ if __name__ == "__main__":
 
     #Lat/lon/time bounds
     
-    lat_slice, lon_slice = utils.get_perth_large_bounds()
-    time_slice = slice("2016-01-06 00:00","2016-01-12 23:00")
-    compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_perth_20160106_20160112")
+    # lat_slice, lon_slice = utils.get_perth_large_bounds()
+    # time_slice = slice("2016-01-06 00:00","2016-01-12 23:00")
+    # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_perth_20160106_20160112")
 
-    lat_slice, lon_slice = utils.get_darwin_large_bounds()
-    compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_darwin_20160106_20160112")
+    # lat_slice, lon_slice = utils.get_darwin_large_bounds()
+    # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_darwin_20160106_20160112")
+
+
+    rid="70"
+    field="corrected_velocity"
+    z=500    
+    for t in pd.date_range("2016-01-01 00:00","2016-01-31 00:00",freq="1D"):
+        print(t)
+        times = [t, t+dt.timedelta(days=1)]
+        radar_animation(rid,times,field,z)
 
 
     #Animate
