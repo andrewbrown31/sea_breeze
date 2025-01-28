@@ -19,6 +19,7 @@ if __name__ == "__main__":
     fc_field_path = path + "sea_breeze_detection/barra_c/Fc_201601010000_201601312300.nc"
     f_field_path = path + "sea_breeze_detection/barra_c/F_201601010000_201601312300.nc"
     hourly_change_path = path+ "sea_breeze_detection/barra_c/F_hourly_201601010000_201601312300.nc"
+    fuzzy_path = path+ "sea_breeze_detection/barra_c/fuzzy_mean_201601010000_201601312300.nc"
     angle_ds_path = path + "coastline_data/barra_c.nc"
     
     #Set up domain bounds and variable name from field_path dataset
@@ -52,6 +53,9 @@ if __name__ == "__main__":
     F = xr.open_dataset(
         f_field_path,chunks="auto"
         ).F.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)) 
+    fuzzy = xr.open_dataset(
+        fuzzy_path,chunks="auto"
+        )["__xarray_dataarray_variable__"].sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)) 
     hourly_change_ds = xr.open_dataset(
         hourly_change_path,chunks="auto"
         ).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
@@ -64,13 +68,6 @@ if __name__ == "__main__":
     angle_ds = load_model_data.get_coastline_angle_kernel(
         compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
         )
-    
-    #Compute the fuzzy function from houry changes
-    fuzzy = sea_breeze_funcs.fuzzy_function_combine(
-        hourly_change_ds.wind_change,
-        hourly_change_ds.q_change,
-        hourly_change_ds.t_change,
-        combine_method="mean")
     
     for field_name, field in zip(["fuzzy_mean","Fc","F"],[fuzzy,Fc,F]):
     
