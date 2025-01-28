@@ -117,7 +117,7 @@ if __name__ == "__main__":
         aus2200_hus,
         aus2200_uas,
         aus2200_vas,
-        angle_ds
+        angle_ds["angle_interp"]
     )
 
     #Setup out paths

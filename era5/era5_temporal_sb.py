@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     #Set up argument parser
     parser = argparse.ArgumentParser(
-        prog="AUS2200 frontogenesis",
+        prog="ERA5 frontogenesis",
         description="This program applies frontogenesis functions to a chosen period of ERA5 data"
     )
     parser.add_argument("t1",type=str,help="Start time (Y-m-d H:M)")
@@ -33,12 +33,13 @@ if __name__ == "__main__":
     t1 = args.t1
     t2 = args.t2                
 
-    #Load AUS2200 model level winds, BLH and static info
+    #Load ERA5
     chunks = {"time":-1,"lat":{},"lon":{}}
-    orog, lsm = load_model_data.load_aus2200_static(
-        "mjo-elnino",
+    orog, lsm, _ = load_model_data.load_era5_static(
         lon_slice,
-        lat_slice)
+        lat_slice,
+        t1,
+        t2)
     era5_uas = load_model_data.load_era5_variable(
             ["10u"],
             t1,
@@ -80,14 +81,14 @@ if __name__ == "__main__":
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/era5_global_angles.nc")
+        path_to_load="/g/data/gb02/ab4502/coastline_data/era5.nc")
 
     #Calc moisture flux gradient
     F_dqdt = sea_breeze_funcs.moisture_flux_gradient(
         era5_huss,
         era5_uas,
         era5_vas,
-        angle_ds,
+        angle_ds["angle_interp"],
         lat_chunk="auto",
         lon_chunk="auto"
     )
@@ -98,7 +99,7 @@ if __name__ == "__main__":
         era5_tas,
         era5_uas,
         era5_vas,
-        angle_ds,
+        angle_ds["angle_interp"],
         lat_chunk="auto",
         lon_chunk="auto"
     )    

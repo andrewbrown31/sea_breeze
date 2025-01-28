@@ -34,7 +34,7 @@ if __name__ == "__main__":
     t2 = args.t2
 
     #Load AUS2200 model level winds, BLH and static info
-    chunks = {"time":-1,"lat":{},"lon":{}}
+    chunks = {"time":-1,"lat":245,"lon":316}
     orog, lsm = load_model_data.load_barra_static(
         "AUST-04",
         lon_slice,
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         huss,
         uas,
         vas,
-        angle_ds
+        angle_ds["angle_interp"]
     )
 
     #Setup out paths
@@ -112,6 +112,6 @@ if __name__ == "__main__":
     print("INFO: Computing frontogenesis...")
     F_save = F.to_netcdf(out_path+F_fname,compute=False,engine="netcdf4")
     progress(F_save.persist())
-#    print("INFO: Computing coast-relative frontogenesis...")
-#    Fc_save = Fc.to_netcdf(out_path+Fc_fname,compute=False,engine="netcdf4")
-#    progress(Fc_save.persist())
+    print("INFO: Computing coast-relative frontogenesis...")
+    Fc_save = Fc.to_netcdf(out_path+Fc_fname,compute=False,engine="netcdf4")
+    progress(Fc_save.persist())

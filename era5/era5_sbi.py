@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument("--lat1",default=-45.7,type=float,help="Start latitude")
     parser.add_argument("--lat2",default=-6.5,type=float,help="End latitude")
     parser.add_argument("--lon1",default=108,type=float,help="Start longitude")
-    parser.add_argument("--lon2",default=-158.5,type=float,help="End longitude")
+    parser.add_argument("--lon2",default=158.5,type=float,help="End longitude")
     parser.add_argument("--hgt1",default=0,type=float,help="Start height to load from disk")
     parser.add_argument("--hgt2",default=4500,type=float,help="End height to load from disk")    
     parser.add_argument('--subtract_mean',default=False,action=argparse.BooleanOptionalAction,help="Subtract mean to calculate SBI on perturbation winds")
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
     #Calc SBI
     sbi = sea_breeze_funcs.calc_sbi(era5_wind,
-                                angle_ds,
+                                angle_ds["angle_interp"],
                                 height_mean=height_mean,
                                 subtract_mean=subtract_mean,
                                 height_method=height_method,

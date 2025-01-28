@@ -35,10 +35,11 @@ if __name__ == "__main__":
 
     #Load AUS2200 model level winds, BLH and static info
     chunks = {"time":-1,"lat":{},"lon":{}}
-    orog, lsm = load_model_data.load_aus2200_static(""
-        "mjo-elnino",
+    orog, lsm, _ = load_model_data.load_era5_static(
         lon_slice,
-        lat_slice)
+        lat_slice,
+        t1,
+        t2)
     era5_uas = load_model_data.load_era5_variable(
             ["10u"],
             t1,
@@ -88,7 +89,7 @@ if __name__ == "__main__":
         era5_huss,
         era5_uas,
         era5_vas,
-        angle_ds
+        angle_ds["angle_interp"]
     )
 
     #Setup out paths

@@ -34,7 +34,7 @@ if __name__ == "__main__":
     t2 = args.t2                
 
     #Load AUS2200 model level winds, BLH and static info
-    chunks = {"time":-1,"lat":50,"lon":50}
+    chunks = {"time":-1,"lat":49,"lon":43}
     orog, lsm = load_model_data.load_barra_static(
         "AUST-04",
         lon_slice,
@@ -87,7 +87,7 @@ if __name__ == "__main__":
         huss,
         uas,
         vas,
-        angle_ds,
+        angle_ds["angle_interp"],
         lat_chunk="auto",
         lon_chunk="auto"
     )
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         tas,
         uas,
         vas,
-        angle_ds,
+        angle_ds["angle_interp"],
         lat_chunk="auto",
         lon_chunk="auto"
     )    
@@ -116,8 +116,8 @@ if __name__ == "__main__":
 
     #Save the output
     print("INFO: Computing moisture flux change...")
-    #F_dqdt_save = F_dqdt.to_netcdf(out_path+F_dqdt_fname,compute=False,engine="netcdf4")
-    #progress(F_dqdt_save.persist())
+    F_dqdt_save = F_dqdt.to_netcdf(out_path+F_dqdt_fname,compute=False,engine="netcdf4")
+    progress(F_dqdt_save.persist())
     print("INFO: Computing hourly changes...")
     F_hourly_save = F_hourly.to_netcdf(out_path+F_hourly_fname,compute=False,engine="netcdf4")
     progress(F_hourly_save.persist())    

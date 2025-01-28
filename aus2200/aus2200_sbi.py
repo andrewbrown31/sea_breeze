@@ -19,7 +19,7 @@ if __name__ == "__main__":
     parser.add_argument("--lat1",default=-45.7,type=float,help="Start latitude")
     parser.add_argument("--lat2",default=-6.5,type=float,help="End latitude")
     parser.add_argument("--lon1",default=108,type=float,help="Start longitude")
-    parser.add_argument("--lon2",default=-158.5,type=float,help="End longitude")
+    parser.add_argument("--lon2",default=158.5,type=float,help="End longitude")
     parser.add_argument("--hgt1",default=0,type=float,help="Start height to load from disk")
     parser.add_argument("--hgt2",default=4500,type=float,help="End height to load from disk")    
     parser.add_argument("-e","--exp_id",default="mjo-elnino",type=str,help="Experiment id for AUS2200 mjo runs")
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     #Calc SBI
     aus2200_wind = xr.Dataset({"u":aus2200_ua,"v":aus2200_va})
     sbi = sea_breeze_funcs.calc_sbi(aus2200_wind,
-                                angle_ds,
+                                angle_ds["angle_interp"],
                                 subtract_mean=subtract_mean,
                                 height_method=height_method,
                                 blh_da=aus2200_zmla,

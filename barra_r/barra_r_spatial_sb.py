@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     #Set up argument parser
     parser = argparse.ArgumentParser(
-        prog="AUS2200 frontogenesis",
+        prog="BARRA-R frontogenesis",
         description="This program applies frontogenesis functions to a chosen period of BARRA-R data"
     )
     parser.add_argument("t1",type=str,help="Start time (Y-m-d H:M)")
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     t1 = args.t1
     t2 = args.t2
 
-    #Load AUS2200 model level winds, BLH and static info
+    #Load BARRA-R
     chunks = {"time":-1,"lat":{},"lon":{}}
     orog, lsm = load_model_data.load_barra_static(
         "AUS-11",
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         huss,
         uas,
         vas,
-        angle_ds
+        angle_ds["angle_interp"]
     )
 
     #Setup out paths

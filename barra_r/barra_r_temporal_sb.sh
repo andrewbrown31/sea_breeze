@@ -2,7 +2,7 @@
 
 #PBS -P gb02 
 #PBS -q normal
-#PBS -l walltime=2:00:00,mem=190GB 
+#PBS -l walltime=1:00:00,mem=32GB 
 #PBS -l ncpus=48
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/barra_r_temporal_sb.o 

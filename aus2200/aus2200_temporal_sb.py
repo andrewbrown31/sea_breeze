@@ -118,14 +118,14 @@ if __name__ == "__main__":
     aus2200_tas = aus2200_tas.sel(time=aus2200_tas.time.dt.minute==0)
 
     #Calc moisture flux gradient
-    #F_dqdt = sea_breeze_funcs.moisture_flux_gradient(
-    #    aus2200_hus,
-    #    aus2200_uas,
-    #    aus2200_vas,
-    #    angle_ds,
-    #    lat_chunk="auto",
-    #    lon_chunk="auto"
-    #)
+    F_dqdt = sea_breeze_funcs.moisture_flux_gradient(
+       aus2200_hus,
+       aus2200_uas,
+       aus2200_vas,
+       angle_ds["angle_interp"],
+       lat_chunk=200,
+       lon_chunk=200
+    )
 
     #Calc hourly change conditions
     F_hourly = sea_breeze_funcs.hourly_change(
@@ -133,9 +133,9 @@ if __name__ == "__main__":
         aus2200_tas,
         aus2200_uas,
         aus2200_vas,
-        angle_ds,
-        lat_chunk="auto",
-        lon_chunk="auto"
+        angle_ds["angle_interp"],
+        lat_chunk=200,
+        lon_chunk=200
     )    
 
     #Setup out paths
@@ -150,9 +150,9 @@ if __name__ == "__main__":
         os.mkdir(out_path)   
 
     #Save the output
-    # print("INFO: Computing moisture flux change...")
-    # F_dqdt_save = F_dqdt.to_netcdf(out_path+F_dqdt_fname,compute=False,engine="netcdf4")
-    # progress(F_dqdt_save.persist())
+    print("INFO: Computing moisture flux change...")
+    F_dqdt_save = F_dqdt.to_netcdf(out_path+F_dqdt_fname,compute=False,engine="netcdf4")
+    progress(F_dqdt_save.persist())
     print("INFO: Computing hourly changes...")
     F_hourly_save = F_hourly.to_netcdf(out_path+F_hourly_fname,compute=False,engine="netcdf4")
     progress(F_hourly_save.persist())    

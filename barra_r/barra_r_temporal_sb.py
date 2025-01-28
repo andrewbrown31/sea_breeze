@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     #Set up argument parser
     parser = argparse.ArgumentParser(
-        prog="AUS2200 frontogenesis",
+        prog="BARRA-R frontogenesis",
         description="This program applies frontogenesis functions to a chosen period of BARRA-R data"
     )
     parser.add_argument("t1",type=str,help="Start time (Y-m-d H:M)")
@@ -87,7 +87,7 @@ if __name__ == "__main__":
         huss,
         uas,
         vas,
-        angle_ds,
+        angle_ds["angle_interp"],
         lat_chunk="auto",
         lon_chunk="auto"
     )
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         tas,
         uas,
         vas,
-        angle_ds,
+        angle_ds["angle_interp"],
         lat_chunk="auto",
         lon_chunk="auto"
     )    
