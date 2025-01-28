@@ -1,5 +1,7 @@
 import numpy as np
 import metpy.calc as mpcalc
+import xarray as xr
+import xesmf as xe
 
 def metpy_grid_area(lon,lat):
     """
@@ -47,3 +49,14 @@ def get_weipa_bounds():
     lat_slice = slice(-13.8059830440922, -11.1080169559078)
     lon_slice = slice(129.543506224276, 132.306493775724)
     return lat_slice, lon_slice    
+
+def regrid(da,new_lon,new_lat):
+    """
+    Regrid a dataarray to a new grid
+    """
+    
+    ds_out = xr.Dataset({"lat":new_lat,"lon":new_lon})
+    regridder = xe.Regridder(da,ds_out,"bilinear")
+    dr_out = regridder(da,keep_attrs=True)
+
+    return dr_out
