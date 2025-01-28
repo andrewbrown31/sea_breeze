@@ -151,15 +151,15 @@ def calc_sbi(wind_ds,
     sbi = xr.where(np.isnan(theta),np.nan,sbi)
 
     #Height of max sbi (where the return flow most opposes the low level flow)
-    sbi_max_h = sbi.idxmax(dim=vert_coord)
+    #sbi_max_h = sbi.idxmax(dim=vert_coord)
 
     #Compute each index as the max in the column
     sbi = sbi.max(vert_coord)
 
     #Dataset output and attributes
     sbi_ds = xr.Dataset({
-        "sbi":sbi,
-        "sbi_max_h":sbi_max_h})
+        "sbi":sbi,})
+        #"sbi_max_h":sbi_max_h})
     
     #Set dataset attributes
     sbi_ds = sbi_ds.assign_attrs(
@@ -179,10 +179,10 @@ def calc_sbi(wind_ds,
         long_name = "Sea breeze index",
         description = "This index identifies regions where there is an onshore flow at a near-surface level with an opposing, offshore flow aloft in the boundary layer. The SBI is calculated for each vertical layer and then the maximum is taken. Following Hallgren et al. 2023 (10.1175/WAF-D-22-0163.1).")  
 
-    sbi_ds["sbi_max_h"] = sbi_ds["sbi_max_h"].assign_attrs(
-                units = "m",
-                long_name = "Height of maximum sbi"
-            )        
+    # sbi_ds["sbi_max_h"] = sbi_ds["sbi_max_h"].assign_attrs(
+    #             units = "m",
+    #             long_name = "Height of maximum sbi"
+    #         )        
     
     return sbi_ds
 
