@@ -2,6 +2,7 @@ import numpy as np
 import metpy.calc as mpcalc
 import xarray as xr
 import xesmf as xe
+import skimage
 
 def metpy_grid_area(lon,lat):
     """
@@ -12,6 +13,14 @@ def metpy_grid_area(lon,lat):
     dx=np.pad(dx,((0,0),(0,1)),mode="edge")
     dy=np.pad(dy,((0,1),(0,0)),mode="edge")
     return dx.to("km"),dy.to("km"),(dx*dy).to("km^2")
+
+def get_seaus_bounds():
+    """
+    For southeast Australia
+    """
+    lat_slice=slice(-45,-30)
+    lon_slice=slice(140,155)
+    return lat_slice, lon_slice
 
 def get_perth_bounds():
     """
@@ -60,3 +69,10 @@ def regrid(da,new_lon,new_lat):
     dr_out = regridder(da,keep_attrs=True)
 
     return dr_out
+
+def binary_closing_time_slice(time_slice,disk_radius=1):
+    out_ds = xr.DataArray(skimage.morphology.binary_closing(time_slice.squeeze(), skimage.morphology.disk(disk_radius)),
+                          dims=time_slice.squeeze().dims, coords=time_slice.squeeze().coords)
+    out_ds = out_ds.expand_dims("time")
+    out_ds["time"] = time_slice.time
+    return out_ds
