@@ -73,6 +73,7 @@ if __name__ == "__main__":
         lat_chunk = args.lat_chunk                        
 
     #Load AUS2200 model level winds, BLH and static info
+    #chunks = {"lev":lev_chunk,"time":time_chunk,"lat":lat_chunk,"lon":lon_chunk}
     chunks = {"lev":lev_chunk,"time":time_chunk,"lat":lat_chunk,"lon":lon_chunk}
     orog, lsm = load_model_data.load_aus2200_static(
         "mjo-elnino",
@@ -125,6 +126,11 @@ if __name__ == "__main__":
 
     #Calc SBI
     aus2200_wind = xr.Dataset({"u":aus2200_ua,"v":aus2200_va})
+    aus2200_wind = aus2200_wind.chunk(chunks={"lev":-1,
+                                                "time":1,
+                                                "lat":500,
+                                                "lon":-1})
+    aus2200_zmla = aus2200_zmla.chunk(chunks={"time":1,"lat":500,"lon":-1})
     sbi = sea_breeze_funcs.calc_sbi(aus2200_wind,
                                 angle_ds["angle_interp"],
                                 subtract_mean=subtract_mean,
@@ -132,14 +138,17 @@ if __name__ == "__main__":
                                 blh_da=aus2200_zmla,
                                 height_mean=height_mean,
                                 vert_coord="lev")
+    progress(sbi)
 
     #Save output
     out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
     sbi_fname = "sbi_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                    (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"   
+                    (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"   
     if os.path.isdir(out_path):
         pass
     else:
         os.mkdir(out_path)   
-    sbi_save = sbi.to_netcdf(out_path+sbi_fname,compute=False)
+    #sbi_save = sbi.to_netcdf(out_path+sbi_fname,compute=False)
+    
+    sbi_save = sbi.to_zarr(out_path+sbi_fname,compute=False,mode="w")
     progress(sbi_save.persist())

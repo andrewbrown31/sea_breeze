@@ -9,11 +9,11 @@ if __name__ == "__main__":
 
     #Set up paths to sea_breeze_funcs data output and other inputs
     path = "/g/data/gb02/ab4502/"
-    hourly_change_path = path+ "sea_breeze_detection/aus2200/F_hourly_mjo-elnino_201601010000_201601312300.nc"
+    hourly_change_path = path+ "sea_breeze_detection/aus2200/F_hourly_mjo-elnino_201601010000_201601312300.zarr"
 
     #Load the hourly change dataset
-    hourly_change_ds = xr.open_dataset(
-        hourly_change_path, chunks={"time":1,"lat":-1,"lon":-1}
+    hourly_change_ds = xr.open_zarr(
+        hourly_change_path
         )
     
     #Combine the fuzzy functions

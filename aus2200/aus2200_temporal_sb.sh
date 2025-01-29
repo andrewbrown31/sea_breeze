@@ -2,14 +2,14 @@
 
 #PBS -P gb02 
 #PBS -q hugemem
-#PBS -l walltime=6:00:00,mem=512GB 
+#PBS -l walltime=12:00:00,mem=512GB 
 #PBS -l ncpus=48
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_temporal_sb.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_temporal_sb.e
 #PBS -l storage=gdata/gb02+gdata/hh5+gdata/ua8
  
-export HDF5_USE_FILE_LOCKING=FALSE
+#export HDF5_USE_FILE_LOCKING=FALSE
 
 #Set up conda/shell environments 
 module use /g/data/hh5/public/modules

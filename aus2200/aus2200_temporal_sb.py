@@ -38,6 +38,17 @@ if __name__ == "__main__":
     t2 = args.t2
     exp_id = args.exp_id
 
+    #Setup out paths
+    out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
+    # F_dqdt_fname = "F_dqdt_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
+    #                     (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"       
+    F_hourly_fname = "F_hourly_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
+                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"               
+    if os.path.isdir(out_path):
+        pass
+    else:
+        os.mkdir(out_path)   
+
     #Setup settings and chunk settings
     if args.time_chunk==0:
         time_chunk = {}
@@ -45,15 +56,17 @@ if __name__ == "__main__":
         time_chunk = args.time_chunk
     if args.lon_chunk==0:
         lon_chunk = {}
+        #lon_chunk="auto"
     else:
         lon_chunk = args.lon_chunk
     if args.lat_chunk==0:
         lat_chunk = {}
+        #lat_chunk="auto"
     else:
         lat_chunk = args.lat_chunk                        
 
     #Load AUS2200 model level winds, BLH and static info
-    chunks = {"time":time_chunk,"lat":lat_chunk,"lon":lon_chunk}
+    chunks = {"time":-1,"lat":{},"lon":{}}
     orog, lsm = load_model_data.load_aus2200_static(
         "mjo-elnino",
         lon_slice,
@@ -117,15 +130,24 @@ if __name__ == "__main__":
     aus2200_hus = aus2200_hus.sel(time=aus2200_hus.time.dt.minute==0)
     aus2200_tas = aus2200_tas.sel(time=aus2200_tas.time.dt.minute==0)
 
+    #Rechunk
+    # aus2200_hus = aus2200_hus.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # aus2200_uas = aus2200_uas.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # aus2200_vas = aus2200_vas.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # aus2200_tas = aus2200_tas.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+
     #Calc moisture flux gradient
-    F_dqdt = sea_breeze_funcs.moisture_flux_gradient(
-       aus2200_hus,
-       aus2200_uas,
-       aus2200_vas,
-       angle_ds["angle_interp"],
-       lat_chunk=200,
-       lon_chunk=200
-    )
+    # F_dqdt = sea_breeze_funcs.moisture_flux_gradient(
+    #    aus2200_hus,
+    #    aus2200_uas,
+    #    aus2200_vas,
+    #    angle_ds["angle_interp"],
+    #    lat_chunk="auto",
+    #    lon_chunk="auto"
+    # )
+    # print("INFO: Computing moisture flux change...")
+    # progress(F_dqdt.persist())
+    # F_dqdt.to_netcdf(out_path+F_dqdt_fname,compute=True,engine="netcdf4")
 
     #Calc hourly change conditions
     F_hourly = sea_breeze_funcs.hourly_change(
@@ -137,22 +159,12 @@ if __name__ == "__main__":
         lat_chunk=200,
         lon_chunk=200
     )    
-
-    #Setup out paths
-    out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
-    F_dqdt_fname = "F_dqdt_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"       
-    F_hourly_fname = "F_hourly_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"               
-    if os.path.isdir(out_path):
-        pass
-    else:
-        os.mkdir(out_path)   
-
-    #Save the output
-    print("INFO: Computing moisture flux change...")
-    F_dqdt_save = F_dqdt.to_netcdf(out_path+F_dqdt_fname,compute=False,engine="netcdf4")
-    progress(F_dqdt_save.persist())
     print("INFO: Computing hourly changes...")
-    F_hourly_save = F_hourly.to_netcdf(out_path+F_hourly_fname,compute=False,engine="netcdf4")
+    progress(F_hourly)
+
+    F_hourly_save = F_hourly.to_zarr(out_path+F_hourly_fname,compute=False,mode="w")
     progress(F_hourly_save.persist())    
+    #progress(F_dqdt_save.persist())
+    
+    
+    #
