@@ -41,7 +41,9 @@ class Mask_Options:
             "temperature_change_thresh":0,            #Temperature change must be less than zero
             "humidity_change_thresh":0,               #Humidity change must be greater than zero
             "wind_change_thresh":0,                   #Wind speed change in onshore direction must be greater than zero
-            "distance_to_coast_thresh":300}           #Within 300 km of the coast
+            "max_distance_to_coast_thresh":300,       #Within 300 km of the coast
+            "min_distance_to_coast_thresh":0          #At least 0 km from the coast
+            }       
         
         self.options = {
             "land_sea_temperature_radius":50,         #Radius of the rolling maximum filter for land sea temperature difference (km)
@@ -159,7 +161,8 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
     * hour_min_lst: Minimum local solar time in hours for time filter (default 9)
     * hour_max_lst: Maximum local solar time in hours for time filter (default 22)
     * land_sea_temperature_diff_thresh: Minimum land sea temperature difference for land sea temperature filter (default 0)
-    * distance_to_coast_thresh: Maximum distance to coast in km for distance to coast filter (default 300 km)
+    * max_distance_to_coast_thresh: Maximum distance to coast in km for distance to coast filter (default 300 km)
+    * min_distance_to_coast_thresh: Minimum distance to coast in km for distance to coast filter (default 0 km)
     * temperature_change_thresh: Maximum temperature change for temperature change filter, same units as t_change (default 0)
     * humidity_change_thresh: Minimum humidity change for humidity change filter, same units as q_change (default 0)
     * wind_change_thresh: Minimum wind change for onshore wind change filter, same units as wind_change (default 0)
@@ -259,7 +262,8 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
             #Calculate the mean distance to coastline over each labelled region
             mean_dist = angle_ds.min_coast_dist.groupby(labels_da.rename("label")).mean().to_series().drop(0)
             props_df["mean_dist_to_coast_km"] = mean_dist
-            cond = cond & ( mean_dist <= mask_options.thresholds["distance_to_coast_thresh"] )
+            cond = cond & ( mean_dist <= mask_options.thresholds["max_distance_to_coast_thresh"] )
+            cond = cond & ( mean_dist >= mask_options.thresholds["min_distance_to_coast_thresh"] )
         else:
             raise ValueError("angle_ds must be provided for distance to coast filter")
 
