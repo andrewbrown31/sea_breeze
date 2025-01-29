@@ -158,7 +158,7 @@ def calc_sbi(wind_ds,
 
     #Dataset output and attributes
     sbi_ds = xr.Dataset({
-        "sbi":sbi,})
+        "sbi":sbi,}).persist()
         #"sbi_max_h":sbi_max_h})
     
     #Set dataset attributes
@@ -205,9 +205,9 @@ def moisture_flux_gradient(q, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"
     """
 
     #Rechunk data in one time dim
-    q = q.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
-    u = u.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
-    v = v.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # q = q.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # u = u.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # v = v.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
 
     #Convert hus to g/kg 
     q = q * 1000
@@ -228,7 +228,7 @@ def moisture_flux_gradient(q, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"
     dqu_dt = (vprime*q).differentiate("time",datetime_unit="s")
 
     #Convert to xr dataset and assign attributes
-    ds = xr.Dataset({"dqu_dt":dqu_dt})
+    ds = xr.Dataset({"dqu_dt":dqu_dt}).persist()
     ds["dqu_dt"] = ds["dqu_dt"].assign_attrs(
         units = "g/kg/m/(s^2)",
         long_name = "Moisture flux rate of change",
@@ -278,6 +278,7 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
     vprime = ((u*cx) + (v*cy))
 
     #Calculate the rate of change
+    dqu_dt = (vprime*q).differentiate("time",datetime_unit="s")
     wind_change = vprime.differentiate("time",datetime_unit="h")
     q_change = q.differentiate("time",datetime_unit="h")
     t_change = t.differentiate("time",datetime_unit="h")  
@@ -286,12 +287,15 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
         wind_change = wind_change.drop_vars("height")
     if "height" in list(wind_change.coords.keys()):        
         t_change = t_change.drop_vars("height")
+    if "height" in list(dqu_dt.coords.keys()):        
+        dqu_dt = dqu_dt.drop_vars("height")     
 
     ds = xr.Dataset(
         {"wind_change":wind_change,
          "q_change":q_change,
          "t_change":t_change,
-            })
+         "dqu_dt":dqu_dt
+            }).persist()
     ds["wind_change"] = ds["wind_change"].assign_attrs(
         units = "m/s/h",
         long_name = "Onshore wind speed rate of change",
@@ -304,6 +308,10 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
         units = "g/kg/h",
         long_name = "Local specific humidity rate of change.",
         description = "Rate of change of specific humidity.")
+    ds["dqu_dt"] = ds["dqu_dt"].assign_attrs(
+        units = "g/kg/m/(s^2)",
+        long_name = "Moisture flux rate of change",
+        description = "Rate of change of onshore moisture flux gradient (dqu/dt).")    
     
     return ds
 
