@@ -1,5 +1,5 @@
 import xarray as xr
-from sea_breeze import sea_breeze_filters, load_model_data, sea_breeze_funcs
+from sea_breeze import sea_breeze_filters, load_model_data, utils
 from dask.distributed import Client
 import os
 import pandas as pd
@@ -23,8 +23,8 @@ if __name__ == "__main__":
     angle_ds_path = path + "coastline_data/barra_c.nc"
     
     #Set up domain bounds and variable name from field_path dataset
-    t1 = "2016-01-01 00:00"
-    t2 = "2016-01-31 23:00"
+    t1 = "2016-01-08 00:00"
+    t2 = "2016-01-08 23:00"
     lat_slice = slice(-45.7,-6.9)
     lon_slice = slice(108,158.5)
 
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     kwargs = {
         "orientation_filter":True,
         "aspect_filter":True,
-        "area_filter":True,        
+        "area_filter":False,        
         "land_sea_temperature_filter":True,                    
         "dist_to_coast_filter":False,
         "output_land_sea_temperature_diff":False,
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
         )
     
-    for field_name, field in zip(["fuzzy_mean","Fc","F"],[fuzzy,Fc,F]):
+    for field_name, field in zip(["Fc"],[Fc]):
     
         print(field_name)
 
@@ -85,16 +85,53 @@ if __name__ == "__main__":
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".nc"
 
+        #EXPERIMENTAL:
+        #Smooth the field before filtering
+        #_,barra_r_lsm = load_model_data.load_barra_static(
+        #    "AUS-11",lon_slice,lat_slice
+        #    )
+        #field = utils.regrid(field,lsm.lon,lsm.lat)
+
         #Run the filtering
         filtered_mask = sea_breeze_filters.filter_3d(
             field,
+            threshold="fixed",
+            threshold_value=55,
             hourly_change_ds=hourly_change_ds,
             ta=ta,
             lsm=lsm,
             angle_ds=angle_ds,
             p=99.5,
-            save_mask=True,
+            save_mask=False,
+            filter_out_path=filter_out_path,
+            props_df_output_path=props_df_out_path,
+            skipna=False,            
+            **kwargs)
+        
+        #EXPERIMENTAL:
+        #Let's try to re-filter a smoothed version of the filtered mask. Just using the area filter.
+        kwargs["orientation_filter"]=False
+        kwargs["aspect_filter"]=False
+        kwargs["land_sea_temperature_filter"]=False
+        kwargs["area_thresh_pixels"]=25
+        
+        #Smooth the filtered mask
+        smoothed_filtered_mask = filtered_mask.mask.map_blocks(
+            utils.binary_closing_time_slice,
+            kwargs={"disk_radius":5},
+            template=filtered_mask.mask)
+        
+        #Run the filtering
+        refiltered_mask = sea_breeze_filters.filter_3d(
+            smoothed_filtered_mask,
+            threshold="fixed",
+            threshold_value=0.5,
+            save_mask=False,
             filter_out_path=filter_out_path,
             props_df_output_path=props_df_out_path,
             skipna=False,
             **kwargs)
+        
+        #Keep a copy of the original filtered mask
+        refiltered_mask["original_filtered_mask"] = filtered_mask["mask"]
+        refiltered_mask.to_netcdf(filter_out_path)

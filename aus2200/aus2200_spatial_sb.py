@@ -68,7 +68,9 @@ if __name__ == "__main__":
             lat_slice,
             "10min",
             chunks=chunks,
-            staggered="lat"),
+            staggered="lat",
+            smooth=True,
+            sigma=4),
               "10min")
     aus2200_uas = load_model_data.round_times(
         load_model_data.load_aus2200_variable(
@@ -80,7 +82,9 @@ if __name__ == "__main__":
             lat_slice,
             "10min",
             chunks=chunks,
-            staggered="lon"),
+            staggered="lon",
+            smooth=True,
+            sigma=4),
               "10min")
     aus2200_hus = load_model_data.round_times(
         load_model_data.load_aus2200_variable(
@@ -91,14 +95,18 @@ if __name__ == "__main__":
             lon_slice,
             lat_slice,
             "10min",
-            chunks=chunks),
+            chunks=chunks,
+            smooth=True,
+            sigma=4),
               "10min")
     angle_ds = load_model_data.get_coastline_angle_kernel(
         lsm,
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200.nc")
+        path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200.nc",
+        smooth=True,
+        sigma=4)
 
     #Just do the hourly data
     aus2200_vas = aus2200_vas.sel(time=aus2200_vas.time.dt.minute==0)
@@ -123,13 +131,9 @@ if __name__ == "__main__":
     #Setup out paths
     out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
     F_fname = "F_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                    (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"   
+                    (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"   
     Fc_fname = "Fc_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"       
-    F_dqdt_fname = "F_dqdt_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"       
-    F_hourly_fname = "F_hourly_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"               
+                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"        
     if os.path.isdir(out_path):
         pass
     else:
@@ -137,8 +141,10 @@ if __name__ == "__main__":
 
     #Save the output
     print("INFO: Computing frontogenesis...")
-    F_save = F.to_netcdf(out_path+F_fname,compute=False,engine="netcdf4")
+    #F_save = F.to_netcdf(out_path+F_fname,compute=False,engine="netcdf4")
+    F_save = F.to_zarr(out_path+F_fname,compute=False,mode="w")
     progress(F_save.persist())
     print("INFO: Computing coast-relative frontogenesis...")
-    Fc_save = Fc.to_netcdf(out_path+Fc_fname,compute=False,engine="netcdf4")
+    #Fc_save = Fc.to_netcdf(out_path+Fc_fname,compute=False,engine="netcdf4")
+    Fc_save = Fc.to_zarr(out_path+Fc_fname,compute=False,mode="w")
     progress(Fc_save.persist())

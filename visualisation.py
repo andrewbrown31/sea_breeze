@@ -57,6 +57,32 @@ def animate_pcolormesh(datasets, figsize=(20,5), rows=None, cols=None, vmins=Non
     ani.save('/g/data/gb02/ab4502/figs/animations/' + fname + '.mp4', writer='ffmpeg', dpi=300)
     #plt.close()
 
+def plotmasks_1fields(ds,fig,tt,framedim,vmins,vmaxs,field_titles,**kwargs):
+
+    ax1, ax2, ax3 = fig.subplots(1,3,subplot_kw={"projection":ccrs.PlateCarree()}).flatten()
+    ds["field1"].isel({framedim:tt}).plot(ax=ax1,vmin=vmins[0],vmax=vmaxs[0],transform=ccrs.PlateCarree(),extend="both")
+    ds["mask1"].isel({framedim:tt}).plot(ax=ax2,vmin=0,vmax=1,transform=ccrs.PlateCarree(),cmap="Blues")
+    ds["filtered_mask1"].isel({framedim:tt}).plot(ax=ax3,vmin=0,vmax=1,transform=ccrs.PlateCarree(),cmap="Blues")
+
+    for ax in [ax1, ax2, ax3]:
+        ax.coastlines()
+        xr.plot.contourf(
+            ds["variance_interp"],ax=ax,levels=[0.,0.5],hatches=["","/////"],colors="none",add_colorbar=False)
+    
+    for ax,i in zip([ax1],[0,1,2]):
+        ax.set_title(field_titles[i])
+    for ax in [ax2]:
+        ax.set_title("SB mask")
+    for ax in [ax3]:        
+        ax.set_title("SB filter")
+
+    fig.suptitle(ds.isel(time=tt).time.values)
+    fig.subplots_adjust(wspace=0.3)
+
+    plt.close(fig)
+    
+    return None, None
+
 def plotmasks_3fields(ds,fig,tt,framedim,vmins,vmaxs,field_titles,**kwargs):
 
     ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8, ax9 = fig.subplots(3,3,subplot_kw={"projection":ccrs.PlateCarree()}).flatten()
@@ -333,6 +359,49 @@ def radar_animation(rid,times,field,z):
     
     [os.remove(f) for f in glob.glob("/scratch/gb02/ab4502/radar/"+rid+"*_grid.nc")];
 
+def barra_c_animation(lat_slice,lon_slice,time_slice):
+
+    #Load data
+    barra_c_F = xr.open_dataset(
+            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/F_201601010000_201601312300.nc",
+            chunks="auto").F
+    barra_c_Fc = xr.open_dataset(
+            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/Fc_201601010000_201601312300.nc",
+            chunks="auto").Fc    
+    barrac_fuzzy = xr.open_dataset(
+            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/fuzzy_mean_201601010000_201601312300.nc",
+            chunks="auto")["__xarray_dataarray_variable__"]   
+    barra_c_fuzzy_mask = xr.open_dataset(
+        "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/filtered_mask_fuzzy_mean_201601010000_201601312300.nc",
+        chunks="auto")
+    barra_c_F_mask = xr.open_dataset(
+            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/filtered_mask_F_201601010000_201601312300.nc",
+            chunks="auto")    
+    barra_c_Fc_mask = xr.open_dataset(
+            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/filtered_mask_Fc_201601010000_201601312300.nc",
+            chunks="auto")    
+    angle_ds = xr.open_dataset('/g/data/gb02/ab4502/coastline_data/barra_c.nc')
+
+    plot_ds = xr.Dataset(
+            {"field1":barrac_fuzzy,
+            "mask1":(barra_c_fuzzy_mask.all_labels >= 1),
+            "filtered_mask1":barra_c_fuzzy_mask.mask,
+            "field2":barra_c_Fc,
+            "mask2":(barra_c_Fc_mask.all_labels >= 1),
+            "filtered_mask2":barra_c_Fc_mask.mask,
+            "field3":barra_c_F,
+            "mask3":(barra_c_F_mask.all_labels >= 1),
+            "filtered_mask3":barra_c_F_mask.mask,
+            "variance_interp":angle_ds["variance_interp"]
+             }
+             ).sel(lat=lat_slice,lon=lon_slice,time=time_slice).chunk({"time":1,"lat":-1,"lon":-1}).persist()
+
+    xmovie_animation_plotmasks_3fields(
+        plot_ds,
+        vmins=[0,-60,-60],
+        vmaxs=[0.5,60,60],
+        field_titles=["Fuzzy function","Coast F","F"])
+
 def barra_r_animation(lat_slice,lon_slice,time_slice):
 
     #Load data
@@ -559,21 +628,24 @@ if __name__ == "__main__":
 
     #Lat/lon/time bounds
     
-    # lat_slice, lon_slice = utils.get_perth_large_bounds()
-    # time_slice = slice("2016-01-06 00:00","2016-01-12 23:00")
+    lat_slice, lon_slice = utils.get_seaus_bounds()
+    time_slice = slice("2016-01-06 00:00","2016-01-12 23:00")
+
     # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_perth_20160106_20160112")
 
     # lat_slice, lon_slice = utils.get_darwin_large_bounds()
     # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_darwin_20160106_20160112")
 
+    barra_c_animation(lat_slice,lon_slice,time_slice)
 
-    rid="70"
-    field="corrected_velocity"
-    z=500    
-    for t in pd.date_range("2016-01-01 00:00","2016-01-31 00:00",freq="1D"):
-        print(t)
-        times = [t, t+dt.timedelta(days=1)]
-        radar_animation(rid,times,field,z)
+
+    # rid="70"
+    # field="corrected_velocity"
+    # z=500    
+    # for t in pd.date_range("2016-01-01 00:00","2016-01-31 00:00",freq="1D"):
+    #     print(t)
+    #     times = [t, t+dt.timedelta(days=1)]
+    #     radar_animation(rid,times,field,z)
 
 
     #Animate

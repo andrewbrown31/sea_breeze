@@ -1,6 +1,6 @@
 import xarray as xr
 from sea_breeze import sea_breeze_funcs
-from dask.distributed import Client
+from dask.distributed import Client, progress
 
 if __name__ == "__main__":
 
@@ -24,4 +24,5 @@ if __name__ == "__main__":
         combine_method="mean")    
     
     #Save
-    fuzzy.to_netcdf(path + "sea_breeze_detection/aus2200/fuzzy_mjo-elnino_201601010000_201601312300.nc")
+    to_zarr = fuzzy.to_zarr(path + "sea_breeze_detection/aus2200/fuzzy_mjo-elnino_201601010000_201601312300.zarr",compute=False,mode="w")
+    progress(to_zarr.persist())

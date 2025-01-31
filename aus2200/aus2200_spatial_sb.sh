@@ -16,4 +16,4 @@ module use /g/data/hh5/public/modules
 module load conda/analysis3
 module load dask-optimiser
 
-python /home/548/ab4502/working/sea_breeze/aus2200/aus2200_spatial_sb.py "2016-01-01 00:00" "2016-01-31 23:00" --lon_chunk "-1" --lat_chunk "-1" --time_chunk "1" --model aus2200 --exp_id "mjo-elnino"
+python /home/548/ab4502/working/sea_breeze/aus2200/aus2200_spatial_sb.py "2016-01-01 00:00" "2016-01-31 23:00" --lon_chunk "-1" --lat_chunk "-1" --time_chunk "1" --model aus2200_smooth_s4 --exp_id "mjo-elnino"
