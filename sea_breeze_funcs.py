@@ -189,6 +189,8 @@ def calc_sbi(wind_ds,
 def moisture_flux_gradient(q, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
 
     """
+    DEPRECATED: Use hourly_change instead
+
     Calculate d(qu)/dt
 
     ## Input
@@ -236,6 +238,36 @@ def moisture_flux_gradient(q, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"
 
     return ds
 
+def rotate_wind(u,v,theta):
+
+    """
+    Rotate u and v wind components to be cross-shore and along-shore, based on angle of coastline orientation, theta.
+
+    ## Input
+    * u: xarray dataarray of u winds in m/s
+    * v: xarray dataarray of v winds in m/s
+    * theta: xarray dataarray of coastline orientation angles from N
+
+    ## Output
+    * vprime: xarray dataarray of wind component perpendicular to the coast
+    * uprime: xarray dataarray of wind component parallel to the coast
+    """
+
+    #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
+    rotated_angle=(((theta)%360-90)%360) + 90   
+    
+    #Define normal angle vectors, pointing onshore
+    cx, cy = [-np.cos(np.deg2rad(rotated_angle)), np.sin(np.deg2rad(rotated_angle))]
+    
+    #Define normal angle vectors, pointing alongshore
+    ax, ay = [-np.cos(np.deg2rad(rotated_angle - 90)), np.sin(np.deg2rad(rotated_angle - 90))]    
+    
+    #Calculate the wind component perpendicular and parallel to the coast by using the normal unit vectors
+    uprime = ((u*ax) + (v*ay))
+    vprime = ((u*cx) + (v*cy))
+
+    return uprime, vprime    
+
 def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
 
     """
@@ -265,17 +297,8 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
     #Convert hus to g/kg 
     q = q * 1000
     
-    #Define angle of coastline orientation from N
-    theta=angle_da 
-    
-    #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
-    rotated_angle=(((theta)%360-90)%360) + 90   
-    
-    #Define normal angle vectors, pointing onshore
-    cx, cy = [-np.cos(np.deg2rad(rotated_angle)), np.sin(np.deg2rad(rotated_angle))]
-    
-    #Calculate the wind component perpendicular and parallel to the coast by using the normal unit vectors
-    vprime = ((u*cx) + (v*cy))
+    #Rotate the winds to be cross-shore (uprime) and along-shore (vprime)
+    uprime, vprime = rotate_wind(u,v,angle_da)
 
     #Calculate the rate of change
     dqu_dt = (vprime*q).differentiate("time",datetime_unit="s")
@@ -494,7 +517,7 @@ def coast_relative_frontogenesis(q,u,v,angle_da):
     #Define normal angle vectors, pointing alongshore
     ax, ay = [-np.cos(np.deg2rad(rotated_angle - 90)), np.sin(np.deg2rad(rotated_angle - 90))]    
 
-    #Calculate the wind component perpendicular and parallel to the coast by using the normal unit vectors
+    #Calculate the wind component perpendicular (vprime) and parallel (uprime) to the coast by using the normal unit vectors
     vprime = ((u*cx) + (v*cy))
     uprime = ((u*ax) + (v*ay))
 
