@@ -27,7 +27,8 @@ class Mask_Options:
             "land_sea_temperature_filter":False,
             "temperature_change_filter":False,
             "humidity_change_filter":False,
-            "wind_change_filter":False
+            "wind_change_filter":False,
+            "propagation_speed_filter":False
         }
 
         self.thresholds = {
@@ -42,7 +43,8 @@ class Mask_Options:
             "humidity_change_thresh":0,               #Humidity change must be greater than zero
             "wind_change_thresh":0,                   #Wind speed change in onshore direction must be greater than zero
             "max_distance_to_coast_thresh":300,       #Within 300 km of the coast
-            "min_distance_to_coast_thresh":0          #At least 0 km from the coast
+            "min_distance_to_coast_thresh":0,          #At least 0 km from the coast
+            "propagation_speed_thresh":0              #Propagation speed must be greater than zero
             }       
         
         self.options = {
@@ -122,11 +124,12 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
 
     ## Input
     ### Required
-    * ds: xarray dataset with a variable "mask", containing a 2d binary mask of sea breeze objects, as an xarray dataarray. May also contain the following variables with the same shape and coordinates as mask as xarray dataarrays:
+    * ds: xarray dataset with a variable "mask", containing a 2d binary mask of sea breeze objects, as an xarray dataarray. May also contain the following variables with the same shape and coordinates as mask as xarray dataarrays (for certain filters):
         * "ta" (surface temperature)
         * "t_change" (temperature change, see sea_breeze_funcs.hourly_change)
         * "q_change" (specific humidity change, see sea_breeze_funcs.hourly_change)
         * "wind_change" (onshore wind speed change, see sea_breeze_funcs.hourly_change)
+        * "vprime" (onshore propagation speed, see sea_breeze_funcs.rotate_wind)
 
     ### Optional
     * angle_ds: xarray dataset of coastline angles created by get_coastline_angles.py
@@ -152,6 +155,7 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
         - Requires q_change to be provided as a variable in ds
     * wind_change_filter: Filter candidate objects based on mean local onshore wind speed increase True/False (default False)
         - Requires wind_change to be provided as a variable in ds
+    * propagation_speed_filter: Filter candidate objects based on propagation speed relative to the coastline. Coast-relative propagation speed is estimated by the mean onshore wind speed over the object (default False)
 
     ### Thresholds
     * orientation_tol: Tolerance in degrees for orientation filter (default 30 degrees)
@@ -166,6 +170,7 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
     * temperature_change_thresh: Maximum temperature change for temperature change filter, same units as t_change (default 0)
     * humidity_change_thresh: Minimum humidity change for humidity change filter, same units as q_change (default 0)
     * wind_change_thresh: Minimum wind change for onshore wind change filter, same units as wind_change (default 0)
+    * propagation_speed_thresh: Minimum onshore propagation speed for propagation speed filter, same units as vprime (default 0)
 
     ### Other options
     * land_sea_temperature_radius: Radius of the rolling maximum/mean filter for land sea temperature difference, in km (default 50 km). NOTE that this radius is converted to pixels by using the mean grid spacing in x and y, and will therefore vary with latitude.
@@ -319,6 +324,16 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
             cond = cond & ( mean_wind_change > mask_options.thresholds["wind_change_thresh"] ) 
         else:
             raise ValueError("wind_change must be provided in ds for wind change filter")
+        
+    #Filter objects based on onshore propagation speed
+    if mask_options.filters["propagation_speed_filter"]:
+        if ("vprime" in list(ds.keys())):
+            #Calculate the mean onshore propagation speed over each labelled region
+            mean_vprime = ds["vprime"].groupby(labels_da.rename("label")).mean().to_series().drop(0)
+            props_df["mean_vprime"] = mean_vprime
+            cond = cond & ( mean_vprime > mask_options.thresholds["propagation_speed_thresh"] ) 
+        else:
+            raise ValueError("vprime must be provided in ds for propagation speed filter")
 
     #Subset label dataframe based on these conditions
     props_df = props_df.loc[cond]
@@ -359,20 +374,20 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
 
     return ds, props_df
 
-def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_change_ds=None,ta=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,skipna=False,**kwargs):
+def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_change_ds=None,ta=None,vprime=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,skipna=False,**kwargs):
 
     """
     Driver function for filter_2d that creates a binary mask from a sea breeze diagnostic field, and works with a time dimension using xr.map_blocks. Docstring copied and adapted from filter_2d:
 
     ## Description
-    Take a sea breeze diagnostic field, then create a binary mask, then filter that mask for sea breeze objects based on several conditions related to those objects. Works for a 3d lat/lon/time field as an xarray dataset. The binary mask is created by taking exceedences of a percentile value as calculated from 'field'.
+    Take a sea breeze diagnostic field, then create a binary mask, then filter that mask for sea breeze objects based on several conditions (filters) related to those objects. Works for a 3d lat/lon/time field as an xarray dataset. The binary mask is created by taking exceedences of a threshold, that can either be "fixed" (i.e. provided by the user) or a percentile value. The filtering is applied using map_blocks to each time slice.
 
     ## Input
     ### Required
     * field: xarray dataarray of a sea breeze diagnostic, with dims lat/lon/time. See sea_breeze.sea_breeze_funcs for diagnostic functions, as well as sea_breeze.sea_breeze_filters.fuzzy_function_combine.
 
     ### Optional
-    * threshold: threshold method for creating binary sea breeze mask. either 'percentile', which calculates the pth percentile from 'field' and uses as a threshold, or 'fixed' which uses 'threshold_value'.
+    * threshold: threshold method for creating binary sea breeze mask. either 'percentile', which calculates the Pth percentile from 'field', or 'fixed' which uses 'threshold_value' provided by the user.
 
     * threshold_value: threshold for creating a binary sea breeze mask if threshold='fixed'
     
@@ -382,17 +397,19 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
 
     * ta: xarray dataarray of surface temperature, with the same coords and dims as field. Needed for land_sea_temperature_filter
 
+    * vprime: xarray dataarray of onshore wind speed, with the same coords and dims as field. Needed for propagation_speed_filter
+
     * lsm: xarray dataarray of the land-sea mask. Needed for land_sea_temperature_filter
 
-    * angle_ds: xarray dataset of coastline angles created by sea_breeze.load_model_data.get_coastline_angles_kernel. Needed for orientation_filter, dist_to_coast_filter.
+    * angle_ds: xarray dataset of coastline angles created by sea_breeze.load_model_data.get_coastline_angles_kernel. Needed for orientation_filter and dist_to_coast_filter. Assumes variables "angle_interp" and "min_coast_dist". See sea_breeze.load_model_data.get_coastline_angles_kernel.
 
     * save_mask: whether to save the output mask dataset to disk
 
     * filter_out_path: if save_mask=True, then where to save the filtered mask output
 
-    * props_df_output_path: path to output a csv file of the properties of each object    
+    * props_df_output_path: path to output a csv file of the properties of each object (TODO, this currently only works properly for 2d filtering)   
 
-    * skip_na: if the field contains nans, then the calculation of the field percentile will ignore nans if this is set to true. Uses the climtas package.
+    * skip_na: (experimental - need to validate) if the field contains nans, then the calculation of the field percentile will ignore nans if this is set to true. Uses the climtas package.
 
     * **kwargs: options for filtering the sea breeze objects passed to filter_ds (see below)
 
@@ -407,7 +424,7 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
 
     * dist_to_coast_filter: Filter candidate objects based on distance to the coast True/False (default False). Requires angle_ds to be provided
 
-    * time_filter: Filter candidate objects based on local solar time True/False (default True)
+    * time_filter: Filter candidate objects based on local solar time True/False (default False)
 
     * land_sea_temperature_filter: Filter candidate objects based on land sea temperature difference True/False (default False). Requires ta and lsm to be provided. 
 
@@ -416,7 +433,8 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
     * humidity_change_filter: Filter candidate objects based on mean local humidity increase True/False (default False). Requires q_change to be provided as a variable in hourly_change_ds.
 
     * wind_change_filter: Filter candidate objects based on mean local onshore wind speed increase True/False (default False). Requires wind_change to be provided as a variable in hourly_change_ds.
-   
+
+    * propagation_speed_filter: Filter candidate objects based on propagation speed relative to the coastline. Coast-relative propagation speed is estimated by the mean onshore wind speed over the object (default False). Requires vprime to be provided.
 
     ### Thresholds
     * orientation_tol: Tolerance in degrees for orientation filter (default 30 degrees)
@@ -430,6 +448,7 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
     * temperature_change_thresh: Maximum temperature change for temperature change filter, same units as t_change (default 0)
     * humidity_change_thresh: Minimum humidity change for humidity change filter, same units as q_change (default 0)
     * wind_change_thresh: Minimum wind change for onshore wind change filter, same units as wind_change (default 0)
+    * propagation_speed_thresh: Oshore propagation speed for propagation speed filter, same units as vprime (default 0, i.e. must be positive)
 
     ### Other options
     * land_sea_temperature_radius: Radius of the rolling maximum/mean filter for land sea temperature difference, in km (default 50 km). 
@@ -439,12 +458,11 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
     ## Output
     * mask: binary mask of sea breeze objects after filtering
 
-    ## NOTE 
+    ## NOTE
     * The land_sea_temperature_filter can slow down the filtering significantly due to a lot of nearest-neighbour lookups.
-    * The land_sea_temperature_radius is converted to pixels by using the mean grid spacing in x and y, and will therefore vary with latitude. You can uncomment the print statement in the function to see the radius in pixels.
-    * TODO Propagation speed or persistance filters? Note this is not straightforward. Will need to be in a separate function with input having a time dimension.
-    * TODO Coastal points filter? For frontogenesis that often has coastal maxima due to frictional convergence
-
+    * The land_sea_temperature_radius is converted to pixels by using the mean grid spacing in x and y, and will therefore vary with latitude. You can uncomment the print statement in the land_sea_temperature_diff_rolling_max function to see the radius in pixels.
+    * Propagation speed is currently estimated by the onshore wind speed, but sea breezes may propagate at different speeds to the wind. 
+    * TODO Coastal points filter? For frontogenesis that often has coastal maxima due to frictional convergence.
     """
 
     if save_mask:
@@ -481,7 +499,13 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
         pass
     else:
         ta=ta.chunk({"time":1,"lat":-1,"lon":-1})
-        ds = xr.merge((ds,ta.rename("ta")),join="exact")   
+        ds = xr.merge((ds,ta.rename("ta")),join="exact")  
+
+    if vprime is None:
+        pass
+    else:
+        vprime = vprime.chunk({"time":1,"lat":-1,"lon":-1})
+        ds = xr.merge((ds,vprime.rename("vprime")),join="exact") 
 
     #If we have given a path to hourly change data, load it and combine with the mask dataset
     if hourly_change_ds is None:
@@ -493,6 +517,7 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
     #We will apply the filtering using map_blocks. So first, need create a "template" from the first time step
     if props_df_out_path is None:
         props_df_out_path = "/scratch/gb02/ab4502/tmp/props_df.csv"
+    kwargs["props_df_output_path"] = props_df_out_path
     template,props_df_template = filter_2d(ds.isel(time=0), **kwargs)
     template = template.chunk({"time":1}).reindex({"time":ds.time},fill_value=False).chunk({"time":1})
 
