@@ -320,7 +320,17 @@ def load_aus2200_static(exp_id,lon_slice,lat_slice,chunks="auto"):
 
     return orog.orog, ((lsm.lmask==100)*1)
 
-def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022):
+def gaussian_filter_time_slice(time_slice,sigma):
+    """
+    Apply a gaussian filter to a time slice of data. For use with map_blocks
+    """
+    out_ds = xr.DataArray(scipy.ndimage.gaussian_filter(time_slice.squeeze(), sigma),
+                          dims=time_slice.squeeze().dims, coords=time_slice.squeeze().coords)
+    out_ds = out_ds.expand_dims("time")
+    out_ds["time"] = time_slice.time
+    return out_ds
+
+def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022, smooth=False, sigma=4):
 
     '''
     Load variables from the mjo-enso AUS2200 experiment, stored on the ua8 project
@@ -400,6 +410,16 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
         da = (da.isel(time=slice(0,-1)).assign_coords({"time":unstaggered_times}) +\
                     da.isel(time=slice(1,da.time.shape[0])).assign_coords({"time":unstaggered_times})) / 2
     
+    #Optional smoothing
+    da = da.assign_attrs({"smoothed":smooth})
+    if smooth:
+        da = da.map_blocks(
+            gaussian_filter_time_slice,
+            kwargs={"sigma":sigma},
+            template=da
+        )
+        da = da.assign_attrs({"gaussian_smoothing_sigma":sigma})
+
     return da
 
 def round_times(ds,freq):
@@ -503,7 +523,17 @@ def get_weights(x, p=4, q=2, R=5, slope=-1, r=10000):
     y = da.where(x>r, 0, y)
     return y
 
-def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,path_to_load=None,save=False,path_to_save=None,lat_slice=None,lon_slice=None):
+def smooth_angles(angles,sigma):
+    """
+    Smooth angles using a gaussian filter
+    Angles is an xarray dataarray from 0 to 360.
+    Sigma is the sigma of the gaussian filter
+    """
+    z = np.exp(1j * np.deg2rad(angles.values))
+    z = np.rad2deg(np.angle(scipy.ndimage.gaussian_filter(z, sigma))) % 360
+    return xr.DataArray(z,dims=angles.dims,coords=angles.coords)
+
+def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,path_to_load=None,save=False,path_to_save=None,lat_slice=None,lon_slice=None,smooth=False,sigma=4):
 
     '''
     Ewan's method with help from Jarrah.
@@ -530,6 +560,10 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
     * lat_slice: if not computing, lats to slice when loading angles from disk
 
     * lat_slice: if not computing, lons to slice when loading angles from disk
+
+    * smooth: boolean - smooth the interpolated angles output using a gaussian filter. All other output (variance, non-interpolated angles, coastline, min coast distance) is not smoothed
+
+    * sigma: if smoothing, the sigma of the gaussian filter 
 
     ## Output
     * An xarray dataset with an array of coastline angles (0-360 degrees from N) for the labelled coastline array, as well as an array of angle variance as an estimate of how many coastlines are influencing a given point
@@ -699,6 +733,9 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
 
     if save:
         angle_ds.to_netcdf(path_to_save)
+
+    if smooth:
+        angle_ds["angle_interp"] = smooth_angles(angle_ds["angle_interp"],sigma)
 
     return angle_ds
 
