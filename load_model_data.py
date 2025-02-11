@@ -13,8 +13,8 @@ import pyproj
 import warnings
 from tqdm.dask import TqdmCallback
 
-def interp_np(x, xp, fp):
-    return np.interp(x, xp, fp, right=np.nan)
+def interp_scipy(x, xp, fp):
+    return scipy.interpolate.interp1d(x, xp, fp, kind="linear", fill_value="extrapolate")
 
 def interp_model_level_to_z(z_da,var_da,mdl_dim,heights):
 
@@ -33,7 +33,7 @@ def interp_model_level_to_z(z_da,var_da,mdl_dim,heights):
 
     assert z_da[mdl_dim][0] > z_da[mdl_dim][-1], "Model levels should be decreasing"
 
-    interp_da = xr.apply_ufunc(interp_np,
+    interp_da = xr.apply_ufunc(interp_scipy,
                 heights,
                 z_da,
                 var_da,
@@ -244,7 +244,7 @@ def get_intake_cat_era5():
 
     return data_catalog
 
-def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, chunks="auto"):
+def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, chunks="auto", smooth=False, sigma=2):
 
     '''
     vnames: name of barra variables
@@ -259,7 +259,6 @@ def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, ch
 
     data_catalog = get_intake_cat_barra()
     times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
-    out = []
     da = data_catalog.search(
         variable_id=vname,
         domain_id=domain_id,
@@ -267,6 +266,16 @@ def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, ch
         start_time=times)\
             .to_dask(cdf_kwargs={"chunks":chunks}).\
                 sel(lon=lon_slice, lat=lat_slice, time=slice(t1,t2))[vname]
+    
+    #Optional smoothing
+    da = da.assign_attrs({"smoothed":smooth})
+    if smooth:
+        da = da.map_blocks(
+            gaussian_filter_time_slice,
+            kwargs={"sigma":sigma},
+            template=da
+        )
+        da = da.assign_attrs({"gaussian_smoothing_sigma":sigma})
         
     return da
 
@@ -320,20 +329,22 @@ def load_aus2200_static(exp_id,lon_slice,lat_slice,chunks="auto"):
 
     return orog.orog, ((lsm.lmask==100)*1)
 
-def gaussian_filter_time_slice(time_slice,sigma):
+def gaussian_filter_time_slice(time_slice,sigma,axes):
     """
     Apply a gaussian filter to a time slice of data. For use with map_blocks
     """
-    out_ds = xr.DataArray(scipy.ndimage.gaussian_filter(time_slice.squeeze(), sigma),
+    out_ds = xr.DataArray(scipy.ndimage.gaussian_filter(time_slice.squeeze(), sigma, axes=axes),
                           dims=time_slice.squeeze().dims, coords=time_slice.squeeze().coords)
     out_ds = out_ds.expand_dims("time")
     out_ds["time"] = time_slice.time
     return out_ds
 
-def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022, smooth=False, sigma=4):
+def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022, smooth=False, smooth_axes=None, sigma=4, interp_hgts=False, dh=100):
 
     '''
-    Load variables from the mjo-enso AUS2200 experiment, stored on the ua8 project
+    Load variables from the mjo-enso AUS2200 experiment, stored on the ua8 project.
+
+    Note that if the data is being smoothed or interpolated, then the relevant dimensions are set to -1 in the chunks dict
 
     ## Input
 
@@ -354,6 +365,20 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
     * hgt_slice: a slice to restrict data in the vertical (in m)
 
     * chunks: dict describing the number of chunks. see xr.open_dataset
+
+    * staggered: if not None, then the data is staggered in the dimension specified. Options are "lat", "lon", "time"
+
+    * dx: the distance to stagger the data by if staggered in lat or lon (in degrees)
+
+    * smooth: boolean - smooth the data using a gaussian filter
+
+    * smooth_axes: if smoothing, the axes to smooth over, as an iterable
+
+    * sigma: if smoothing, the sigma of the gaussian filter
+
+    * interp_hgts: boolean - interpolate the data to the height levels
+
+    * dh: if interpolating to height levels, the height increment (in m)
     '''
 
     #This code makes sure the inputs for experiment id and time frequency match what is on disk 
@@ -369,6 +394,7 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
             ds = ds.sel(lat=lat_slice,lon=lon_slice,lev=hgt_slice)
             return ds   
 
+    #Set up the time and lat/lon slices if the data is staggered
     if staggered is not None:
         _, lsm = load_aus2200_static(exp_id,lon_slice,lat_slice)
         if staggered == "lat":
@@ -388,18 +414,23 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
         else:
             raise ValueError("Invalid stagger dim")
     
+    #Load the data from disk. If hgt_slice is not None, then we are loading 3D data, with an option to interpolate to regular height levels
     fnames = "/g/data/ua8/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200_"+exp_id+"_*.nc"
     if hgt_slice is not None:
         da = xr.open_mfdataset(fnames, 
                                chunks=chunks, 
                                parallel=True, 
                                preprocess=_preprocess_hgt).sel(time=slice(t1,t2))[vname]
+        if interp_hgts:
+            chunks["lev"] = -1
+            da = da.interp(lev=np.arange(hgt_slice.start,hgt_slice.stop+dh,dh),method="linear",kwargs={"fill_value":"extrapolate"})
     else:
         da = xr.open_mfdataset(fnames,
                                chunks=chunks,
                                parallel=True,
                                preprocess=_preprocess).sel(time=slice(t1,t2))[vname]
     
+    #Destagger the data if required
     if staggered == "lat":
         da = (da.isel(lat=slice(0,-1)).assign_coords({"lat":lsm.lat}) +
                         da.isel(lat=slice(1,da.lat.shape[0])).assign_coords({"lat":lsm.lat})) / 2        
@@ -410,12 +441,20 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
         da = (da.isel(time=slice(0,-1)).assign_coords({"time":unstaggered_times}) +\
                     da.isel(time=slice(1,da.time.shape[0])).assign_coords({"time":unstaggered_times})) / 2
     
-    #Optional smoothing
+    #Optional smoothing using gaussian filter
     da = da.assign_attrs({"smoothed":smooth})
     if smooth:
+        if smooth_axes is not None:
+            for ax in smooth_axes:
+                chunks[ax] = -1
+            smooth_axes = (np.where(np.in1d(da.isel(time=0).dims,smooth_axes))[0])
+        else:
+            chunks["lev"] = -1
+            chunks["lat"] = -1
+            chunks["lon"] = -1
         da = da.map_blocks(
             gaussian_filter_time_slice,
-            kwargs={"sigma":sigma},
+            kwargs={"sigma":sigma,"axes":smooth_axes},
             template=da
         )
         da = da.assign_attrs({"gaussian_smoothing_sigma":sigma})

@@ -22,6 +22,8 @@ if __name__ == "__main__":
     parser.add_argument("--lon2",default=158.5,type=float,help="End longitude")
     parser.add_argument("--hgt1",default=0,type=float,help="Start height to load from disk")
     parser.add_argument("--hgt2",default=4500,type=float,help="End height to load from disk")    
+    parser.add_argument('--interp_hgt',default=True,action=argparse.BooleanOptionalAction,help="Interpolate AUS2200 model level data to regular height levels, from hgt1 to hgt2 and with a spacing of dh")
+    parser.add_argument("--dh",default=100,type=float,help="If interp_hgt, then this is the height spacing in meters")    
     parser.add_argument("-e","--exp_id",default="mjo-elnino",type=str,help="Experiment id for AUS2200 mjo runs")
     parser.add_argument('--subtract_mean',default=False,action=argparse.BooleanOptionalAction,help="Subtract mean to calculate SBI on perturbation winds")
     parser.add_argument("--lev_chunk",default=0,type=int,help="Chunk size for vertical level dim. Default is on-disk chunks")
@@ -29,6 +31,8 @@ if __name__ == "__main__":
     parser.add_argument("--lon_chunk",default=0,type=int,help="Chunk size for lon dim. Default is on-disk chunks")
     parser.add_argument("--lat_chunk",default=0,type=int,help="Chunk size for lat dim. Default is on-disk chunks")    
     parser.add_argument("--height_method",default="blh",type=str,help="Either blh or static")
+    parser.add_argument('--smooth',default=False,action=argparse.BooleanOptionalAction,help="Smooth the data before calculating frontogenesis")
+    parser.add_argument("--sigma",default=2,type=int,help="Sigma for smoothing")    
     args = parser.parse_args()
 
     if args.subtract_mean:
@@ -72,6 +76,12 @@ if __name__ == "__main__":
     else:
         lat_chunk = args.lat_chunk                        
 
+    #Set up smoothing axes
+    if args.smooth:
+        smooth_axes = ["lat","lon","lev"]   
+    else:
+        smooth_axes = None                                    
+
     #Load AUS2200 model level winds, BLH and static info
     #chunks = {"lev":lev_chunk,"time":time_chunk,"lat":lat_chunk,"lon":lon_chunk}
     chunks = {"lev":lev_chunk,"time":time_chunk,"lat":lat_chunk,"lon":lon_chunk}
@@ -90,7 +100,12 @@ if __name__ == "__main__":
             "1hr",
             chunks=chunks,
             staggered="lat",
-            hgt_slice=hgt_slice),
+            hgt_slice=hgt_slice,
+            interp_hgts=args.interp_hgt,
+            dh=args.dh,
+            smooth=args.smooth,
+            sigma=args.sigma,
+            smooth_axes=smooth_axes),
               "1hr")
     aus2200_ua = load_model_data.round_times(
         load_model_data.load_aus2200_variable(
@@ -103,7 +118,12 @@ if __name__ == "__main__":
             "1hr",
             chunks=chunks,
             staggered="lon",
-            hgt_slice=hgt_slice),
+            hgt_slice=hgt_slice,
+            interp_hgts=args.interp_hgt,
+            dh=args.dh,
+            smooth=args.smooth,
+            sigma=args.sigma,
+            smooth_axes=smooth_axes),
               "1hr")
     aus2200_zmla = load_model_data.round_times(
         load_model_data.load_aus2200_variable(
@@ -115,14 +135,19 @@ if __name__ == "__main__":
             lat_slice,
             "1hr",
             chunks=chunks,
-            staggered="time"),
+            staggered="time",
+            smooth=args.smooth,
+            sigma=args.sigma,
+            smooth_axes=["lat","lon"]),
               "1hr")
     angle_ds = load_model_data.get_coastline_angle_kernel(
         lsm,
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200.nc")
+        path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200.nc",
+        smooth=args.smooth,
+        sigma=args.sigma)
 
     #Calc SBI
     aus2200_wind = xr.Dataset({"u":aus2200_ua,"v":aus2200_va})
@@ -149,6 +174,12 @@ if __name__ == "__main__":
     else:
         os.mkdir(out_path)   
     #sbi_save = sbi.to_netcdf(out_path+sbi_fname,compute=False)
+
+    #Add attrs
+    sbi = sbi.assign_attrs(
+        smooth=args.smooth,
+        sigma=args.sigma,
+    )
     
     sbi_save = sbi.to_zarr(out_path+sbi_fname,compute=False,mode="w")
     progress(sbi_save.persist())

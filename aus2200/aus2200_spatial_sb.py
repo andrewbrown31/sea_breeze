@@ -10,8 +10,8 @@ if __name__ == "__main__":
 
     #Set up argument parser
     parser = argparse.ArgumentParser(
-        prog="AUS2200 frontogenesis",
-        description="This program applies frontogenesis functions to a chosen period of AUS2200 data"
+        prog="AUS2200 spatial sea breeze functions",
+        description="This program applies spatial sea breeze functions to a chosen period of AUS2200 data, such as frontogenesis"
     )
     parser.add_argument("t1",type=str,help="Start time (Y-m-d H:M)")
     parser.add_argument("t2",type=str,help="End time (Y-m-d H:M)")
@@ -24,6 +24,8 @@ if __name__ == "__main__":
     parser.add_argument("--time_chunk",default=0,type=int,help="Chunk size for time dim. Default is on-disk chunks")
     parser.add_argument("--lon_chunk",default=0,type=int,help="Chunk size for lon dim. Default is on-disk chunks")
     parser.add_argument("--lat_chunk",default=0,type=int,help="Chunk size for lat dim. Default is on-disk chunks")    
+    parser.add_argument('--smooth',default=False,action=argparse.BooleanOptionalAction,help="Smooth the data before calculating frontogenesis")
+    parser.add_argument("--sigma",default=2,type=int,help="Sigma for smoothing")
     args = parser.parse_args()
 
     #Initiate distributed dask client on the Gadi HPC
@@ -50,7 +52,13 @@ if __name__ == "__main__":
     if args.lat_chunk==0:
         lat_chunk = {}
     else:
-        lat_chunk = args.lat_chunk                        
+        lat_chunk = args.lat_chunk  
+
+    #Set up smoothing axes
+    if args.smooth:
+        smooth_axes = ["lat","lon"]   
+    else:
+        smooth_axes = None                   
 
     #Load AUS2200 model level winds, BLH and static info
     chunks = {"time":time_chunk,"lat":lat_chunk,"lon":lon_chunk}
@@ -69,8 +77,9 @@ if __name__ == "__main__":
             "10min",
             chunks=chunks,
             staggered="lat",
-            smooth=True,
-            sigma=4),
+            smooth=args.smooth,
+            sigma=args.sigma,
+            smooth_axes=smooth_axes),
               "10min")
     aus2200_uas = load_model_data.round_times(
         load_model_data.load_aus2200_variable(
@@ -83,8 +92,9 @@ if __name__ == "__main__":
             "10min",
             chunks=chunks,
             staggered="lon",
-            smooth=True,
-            sigma=4),
+            smooth=args.smooth,
+            sigma=args.sigma,
+            smooth_axes=smooth_axes),
               "10min")
     aus2200_hus = load_model_data.round_times(
         load_model_data.load_aus2200_variable(
@@ -96,8 +106,9 @@ if __name__ == "__main__":
             lat_slice,
             "10min",
             chunks=chunks,
-            smooth=True,
-            sigma=4),
+            smooth=args.smooth,
+            sigma=args.sigma,
+            smooth_axes=smooth_axes),
               "10min")
     angle_ds = load_model_data.get_coastline_angle_kernel(
         lsm,
@@ -105,8 +116,8 @@ if __name__ == "__main__":
         lat_slice=lat_slice,
         lon_slice=lon_slice,
         path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200.nc",
-        smooth=True,
-        sigma=4)
+        smooth=args.smooth,
+        sigma=args.sigma)
 
     #Just do the hourly data
     aus2200_vas = aus2200_vas.sel(time=aus2200_vas.time.dt.minute==0)
@@ -138,6 +149,16 @@ if __name__ == "__main__":
         pass
     else:
         os.mkdir(out_path)   
+
+    #Add smoothing attrs
+    F = F.assign_attrs(
+        smooth=args.smooth,
+        sigma=args.sigma,
+    )
+    Fc = Fc.assign_attrs(
+        smooth=args.smooth,
+        sigma=args.sigma,
+    )
 
     #Save the output
     print("INFO: Computing frontogenesis...")

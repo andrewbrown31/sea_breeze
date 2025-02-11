@@ -166,7 +166,8 @@ def calc_sbi(wind_ds,
         subtract_mean=str(subtract_mean),
         alpha_height=alpha_height,
         height_method=height_method,
-        height_mean=str(height_mean)
+        height_mean=str(height_mean),
+        hgt_levs=str(wind_ds[vert_coord].values),
     )
     if height_method=="static":
         sbi_ds = sbi_ds.assign_attrs(
