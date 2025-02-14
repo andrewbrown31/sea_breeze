@@ -10,6 +10,7 @@ import metpy.calc as mpcalc
 import dask.array as da
 from sea_breeze import utils
 import os
+from dask.distributed import progress
 
 class Mask_Options:
     
@@ -469,13 +470,15 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
         if filter_out_path is None:
             raise ValueError("filter_out_path must be provided if save_mask is True")
 
-    #Load sea breeze function from sea_breeze_funcs
+    #Rechunk the field in time, as we are using map_blocks
     field = field.chunk({"time":1,"lat":-1,"lon":-1})
 
-    #Mask based on percentile values
+    #Create a binary mask from the field. Either by computing a percentile value ot using a fixed threshold
     if threshold=="percentile":
         print("INFO: Computing "+str(p)+"th percentile from field...")
-        thresh = percentile(field,p=p,skipna=skipna).compute()
+        thresh = percentile(field,p=p,skipna=skipna)
+        thresh = thresh.compute()
+        progress(thresh)
         print("Using threshold: ",str(thresh))
     elif threshold=="fixed":
         if threshold_value is not None:
@@ -486,40 +489,42 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
         raise ValueError("threshold must be 'percentile' or 'fixed'")
     ds = binary_mask(field, thresh)
 
-    #If angle_ds is provided, add to kwargs to pass to filtering
+    #If angle_ds is provided, add to kwargs to pass to filter_2d
     if angle_ds is not None:
         kwargs["angle_ds"] = angle_ds.compute()
 
-    #If lsm is provided, add to kwargs to pass to filtering
+    #If lsm is provided, add to kwargs to pass to filter_2d
     if lsm is not None:
         kwargs["lsm"] = lsm.compute()
     
-    #If ta is provided, re-chunk and combine with the mask dataset
+    #If ta is provided, re-chunk in time and combine with the mask dataset
     if ta is None:
         pass
     else:
         ta=ta.chunk({"time":1,"lat":-1,"lon":-1})
         ds = xr.merge((ds,ta.rename("ta")),join="exact")  
 
+    #If vprime is provided, re-chunk in time and combine with the mask dataset
     if vprime is None:
         pass
     else:
         vprime = vprime.chunk({"time":1,"lat":-1,"lon":-1})
         ds = xr.merge((ds,vprime.rename("vprime")),join="exact") 
 
-    #If we have given a path to hourly change data, load it and combine with the mask dataset
+    #Ifhourly change data is provided, re-chunk in time and combine with the mask dataset
     if hourly_change_ds is None:
         pass
     else:
         hourly_change_ds = hourly_change_ds.chunk({"time":1,"lat":-1,"lon":-1})
         ds = xr.merge((ds,hourly_change_ds),join="exact")         
 
-    #We will apply the filtering using map_blocks. So first, need create a "template" from the first time step
+    #We will apply the filtering using map_blocks.
+    #First, need create a "template" from the first time step
     if props_df_out_path is None:
         props_df_out_path = "/scratch/gb02/ab4502/tmp/props_df.csv"
     kwargs["props_df_output_path"] = props_df_out_path
     template,props_df_template = filter_2d(ds.isel(time=0), **kwargs)
-    template = template.chunk({"time":1}).reindex({"time":ds.time},fill_value=False).chunk({"time":1})
+    template = template.reindex({"time":ds.time},fill_value=False).chunk({"time":1})
 
     #Setup the output dafaframe for saving sea breeze object properties as csv files
     initialise_props_df_output(props_df_out_path,props_df_template)
@@ -538,7 +543,8 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
     
     #Save the filtered mask if required
     if save_mask:
-        filtered_mask.to_netcdf(filter_out_path)
+        mask_save = filtered_mask.to_zarr(filter_out_path,compute=False,mode="w")
+        progress(mask_save.persist())
     
     return filtered_mask
 

@@ -22,7 +22,7 @@ if __name__ == "__main__":
     parser.add_argument("--lon2",default=158.5,type=float,help="End longitude")
     parser.add_argument("--hgt1",default=0,type=float,help="Start height to load from disk")
     parser.add_argument("--hgt2",default=4500,type=float,help="End height to load from disk")    
-    parser.add_argument('--interp_hgt',default=True,action=argparse.BooleanOptionalAction,help="Interpolate AUS2200 model level data to regular height levels, from hgt1 to hgt2 and with a spacing of dh")
+    parser.add_argument('--interp_hgt',default=False,action=argparse.BooleanOptionalAction,help="Interpolate AUS2200 model level data to regular height levels, from hgt1 to hgt2 and with a spacing of dh")
     parser.add_argument("--dh",default=100,type=float,help="If interp_hgt, then this is the height spacing in meters")    
     parser.add_argument("-e","--exp_id",default="mjo-elnino",type=str,help="Experiment id for AUS2200 mjo runs")
     parser.add_argument('--subtract_mean',default=False,action=argparse.BooleanOptionalAction,help="Subtract mean to calculate SBI on perturbation winds")
@@ -179,6 +179,7 @@ if __name__ == "__main__":
     sbi = sbi.assign_attrs(
         smooth=args.smooth,
         sigma=args.sigma,
+        interp_hgt=args.interp_hgt
     )
     
     sbi_save = sbi.to_zarr(out_path+sbi_fname,compute=False,mode="w")

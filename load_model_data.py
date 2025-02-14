@@ -244,7 +244,7 @@ def get_intake_cat_era5():
 
     return data_catalog
 
-def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, chunks="auto", smooth=False, sigma=2):
+def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, chunks="auto", smooth=False, sigma=2, smooth_axes=None):
 
     '''
     vnames: name of barra variables
@@ -255,6 +255,9 @@ def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, ch
     lat_slice: a slice to restrict lat domain
     lon_slice: a slice to restrict lon domain
     chunks: dict describing the number of chunks. see xr.open_dataset
+    smooth: boolean - smooth the data using a gaussian filter
+    sigma: if smoothing, the sigma of the gaussian filter
+    smooth_axes: if smoothing, the axes to smooth over, as an iterable
     '''
 
     data_catalog = get_intake_cat_barra()
@@ -270,9 +273,18 @@ def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, ch
     #Optional smoothing
     da = da.assign_attrs({"smoothed":smooth})
     if smooth:
+
+        if smooth_axes is not None:
+            for ax in smooth_axes:
+                chunks[ax] = -1
+            smooth_axes = (np.where(np.in1d(da.isel(time=0).dims,smooth_axes))[0])
+        else:
+            chunks["lon"] = -1
+            chunks["lat"] = -1
+
         da = da.map_blocks(
             gaussian_filter_time_slice,
-            kwargs={"sigma":sigma},
+            kwargs={"sigma":sigma,"axes":smooth_axes},
             template=da
         )
         da = da.assign_attrs({"gaussian_smoothing_sigma":sigma})
@@ -339,7 +351,7 @@ def gaussian_filter_time_slice(time_slice,sigma,axes):
     out_ds["time"] = time_slice.time
     return out_ds
 
-def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022, smooth=False, smooth_axes=None, sigma=4, interp_hgts=False, dh=100):
+def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022, smooth=False, smooth_axes=None, sigma=2, interp_hgts=False, dh=100):
 
     '''
     Load variables from the mjo-enso AUS2200 experiment, stored on the ua8 project.

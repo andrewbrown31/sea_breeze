@@ -1,12 +1,20 @@
 import xarray as xr
-from sea_breeze import sea_breeze_filters, load_model_data, utils
+from sea_breeze import sea_breeze_filters, load_model_data, utils, sea_breeze_funcs
 from dask.distributed import Client
-import os
 import pandas as pd
 from dask.distributed import Client, progress
 import warnings
+import argparse
 
 if __name__ == "__main__":
+
+    #Set up argument parser
+    parser = argparse.ArgumentParser(
+        prog="BARRA-C filtering",
+        description="This program loads a sea breeze diagnostic field from BARRA-C and applies a series of filters to it"
+    )
+    parser.add_argument("--model",default="barra_c",type=str,help="Model directory name for input/output. Could be barra_c (default) or maybe barra_smooth_s2")
+    args = parser.parse_args()
 
     #Set up dask client
     client = Client()
@@ -15,16 +23,19 @@ if __name__ == "__main__":
     warnings.simplefilter("ignore")
 
     #Set up paths to sea_breeze_funcs data output and other inputs
+    model = args.model
     path = "/g/data/gb02/ab4502/"
-    fc_field_path = path + "sea_breeze_detection/barra_c/Fc_201601010000_201601312300.nc"
-    f_field_path = path + "sea_breeze_detection/barra_c/F_201601010000_201601312300.nc"
-    hourly_change_path = path+ "sea_breeze_detection/barra_c/F_hourly_201601010000_201601312300.nc"
-    fuzzy_path = path+ "sea_breeze_detection/barra_c/fuzzy_mean_201601010000_201601312300.nc"
-    angle_ds_path = path + "coastline_data/barra_c.nc"
+    fc_field_path = path + "sea_breeze_detection/"+model+"/Fc_201601010000_201601312300.zarr"
+    f_field_path = path + "sea_breeze_detection/"+model+"/F_201601010000_201601312300.zarr"
+    fuzzy_path = path+ "sea_breeze_detection/"+model+"/fuzzy_mean_201601010000_201601312300.zarr"
     
+    #Set up paths to other datasets that can be used for additional filtering. These always use standard aus2200 resolution, so no need to specify model
+    hourly_change_path = path+ "sea_breeze_detection/barra_c/F_hourly_201601010000_201601312300.zarr"
+    angle_ds_path = path + "coastline_data/barra_c.nc"
+
     #Set up domain bounds and variable name from field_path dataset
-    t1 = "2016-01-08 00:00"
-    t2 = "2016-01-08 23:00"
+    t1 = "2016-01-01 00:00"
+    t2 = "2016-01-31 23:00"
     lat_slice = slice(-45.7,-6.9)
     lon_slice = slice(108,158.5)
 
@@ -32,35 +43,45 @@ if __name__ == "__main__":
     kwargs = {
         "orientation_filter":True,
         "aspect_filter":True,
-        "area_filter":False,        
+        "area_filter":True,        
         "land_sea_temperature_filter":True,                    
+        "temperature_change_filter":True,
+        "humidity_change_filter":True,
+        "wind_change_filter":True,
+        "propagation_speed_filter":True,
         "dist_to_coast_filter":False,
-        "output_land_sea_temperature_diff":False,
-        "temperature_change_filter":False,
-        "humidity_change_filter":False,
-        "wind_change_filter":False,
+        "output_land_sea_temperature_diff":False,        
         "time_filter":False,
         "orientation_tol":45,
-        "area_thresh_pixels":10,
+        "area_thresh_pixels":12,
         "aspect_thresh":2,
-        "land_sea_temperature_diff_thresh":0
+        "land_sea_temperature_diff_thresh":0,
+        "propagation_speed_thresh":0,
         }
 
     #Load data for filtering: Fc, hourly_change, tas, lsm and coastline angles
     Fc = xr.open_dataset(
-        fc_field_path,chunks="auto"
+        fc_field_path,chunks={"time":1,"lat":-1,"lon":-1}
         ).Fc.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)) 
     F = xr.open_dataset(
-        f_field_path,chunks="auto"
+        f_field_path,chunks={"time":1,"lat":-1,"lon":-1}
         ).F.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)) 
     fuzzy = xr.open_dataset(
-        fuzzy_path,chunks="auto"
+        fuzzy_path,chunks={"time":1,"lat":-1,"lon":-1}
         )["__xarray_dataarray_variable__"].sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)) 
+    
+    #Load other datasets that can be used for additional filtering
     hourly_change_ds = xr.open_dataset(
-        hourly_change_path,chunks="auto"
+        hourly_change_path,chunks={"time":1,"lat":-1,"lon":-1}
         ).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
     ta = load_model_data.load_barra_variable(
         "tas",t1,t2,"AUST-04","1hr",lat_slice,lon_slice
+        )
+    uas = load_model_data.load_barra_variable(
+        "uas",t1,t2,"AUST-04","1hr",lat_slice,lon_slice
+        )
+    vas = load_model_data.load_barra_variable(
+        "vas",t1,t2,"AUST-04","1hr",lat_slice,lon_slice
         )
     _,lsm = load_model_data.load_barra_static(
         "AUST-04",lon_slice,lat_slice
@@ -68,70 +89,38 @@ if __name__ == "__main__":
     angle_ds = load_model_data.get_coastline_angle_kernel(
         compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
         )
+    uprime, vprime = sea_breeze_funcs.rotate_wind(
+        uas,
+        vas,
+        angle_ds["angle_interp"])
     
-    for field_name, field in zip(["Fc"],[Fc]):
+    for field_name, field in zip(["Fc","F","fuzzy"],[Fc,F,fuzzy]):
     
         print(field_name)
 
         #Set up output paths
         props_df_out_path = path+\
-            "sea_breeze_detection/barra_c/props_df_"+\
+            "sea_breeze_detection/"+model+"/props_df_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".csv" 
         filter_out_path = path+\
-            "sea_breeze_detection/barra_c/filtered_mask_"+\
+            "sea_breeze_detection/"+model+"/filtered_mask_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".nc"
-
-        #EXPERIMENTAL:
-        #Smooth the field before filtering
-        #_,barra_r_lsm = load_model_data.load_barra_static(
-        #    "AUS-11",lon_slice,lat_slice
-        #    )
-        #field = utils.regrid(field,lsm.lon,lsm.lat)
+                        pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".zarr"
 
         #Run the filtering
         filtered_mask = sea_breeze_filters.filter_3d(
             field,
-            threshold="fixed",
-            threshold_value=55,
             hourly_change_ds=hourly_change_ds,
             ta=ta,
             lsm=lsm,
             angle_ds=angle_ds,
-            p=99.5,
-            save_mask=False,
+            vprime=vprime.drop("height"),
+            p=99.75,
+            save_mask=True,
             filter_out_path=filter_out_path,
-            props_df_output_path=props_df_out_path,
-            skipna=False,            
-            **kwargs)
-        
-        #EXPERIMENTAL:
-        #Let's try to re-filter a smoothed version of the filtered mask. Just using the area filter.
-        kwargs["orientation_filter"]=False
-        kwargs["aspect_filter"]=False
-        kwargs["land_sea_temperature_filter"]=False
-        kwargs["area_thresh_pixels"]=25
-        
-        #Smooth the filtered mask
-        smoothed_filtered_mask = filtered_mask.mask.map_blocks(
-            utils.binary_closing_time_slice,
-            kwargs={"disk_radius":5},
-            template=filtered_mask.mask)
-        
-        #Run the filtering
-        refiltered_mask = sea_breeze_filters.filter_3d(
-            smoothed_filtered_mask,
-            threshold="fixed",
-            threshold_value=0.5,
-            save_mask=False,
-            filter_out_path=filter_out_path,
-            props_df_output_path=props_df_out_path,
+            props_df_out_path=props_df_out_path,
             skipna=False,
             **kwargs)
-        
-        #Keep a copy of the original filtered mask
-        refiltered_mask["original_filtered_mask"] = filtered_mask["mask"]
-        refiltered_mask.to_netcdf(filter_out_path)

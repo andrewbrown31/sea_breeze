@@ -22,14 +22,16 @@ if __name__ == "__main__":
     #Ignore warnings for runtime errors (divide by zero etc)
     warnings.simplefilter("ignore")
 
-    #Set up paths to sea_breeze_funcs data output and other inputs
+    #Set up paths to sea breeze diagnostics (output from sea_breeze_funcs.py)
     model = args.model
     path = "/g/data/gb02/ab4502/"
     fc_field_path = path + "sea_breeze_detection/"+model+"/Fc_mjo-elnino_201601010000_201601312300.zarr"
     f_field_path = path + "sea_breeze_detection/"+model+"/F_mjo-elnino_201601010000_201601312300.zarr"
-    hourly_change_path = path+ "sea_breeze_detection/"+model+"/F_hourly_mjo-elnino_201601010000_201601312300.nc"
-    sbi_path = path+ "sea_breeze_detection/"+model+"/sbi_mjo-elnino_201601010100_201601312300.nc"
-    fuzzy_path = path+ "sea_breeze_detection/"+model+"/fuzzy_mjo-elnino_201601010000_201601312300.nc"
+    sbi_path = path+ "sea_breeze_detection/"+model+"/sbi_mjo-elnino_201601010100_201601312300.zarr"
+    fuzzy_path = path+ "sea_breeze_detection/"+model+"/fuzzy_mjo-elnino_201601010000_201601312300.zarr"
+
+    #Set up paths to other datasets that can be used for additional filtering. These always use standard aus2200 resolution, so no need to specify model (aus2200 or aus2200_pert or aus2200_smooth_s2)
+    hourly_change_path = path+ "sea_breeze_detection/aus2200/F_hourly_mjo-elnino_201601010000_201601312300.zarr"
     angle_ds_path = path + "coastline_data/aus2200.nc"
     
     #Set up domain bounds and variable name from field_path dataset
@@ -62,25 +64,25 @@ if __name__ == "__main__":
     Fc = xr.open_dataset(
         fc_field_path,chunks={"time":1,"lat":-1,"lon":-1}
         ).Fc.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
-    # F = xr.open_dataset(
-    #     f_field_path,chunks={"time":1,"lat":-1,"lon":-1}
-    #     ).F.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
-    # fuzzy = xr.open_dataset(
-    #     fuzzy_path,chunks={"time":1,"lat":-1,"lon":-1}
-    #     )["__xarray_dataarray_variable__"].sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
-    # sbi = xr.open_dataset(
-    #     sbi_path,chunks={"time":1,"lat":-1,"lon":-1}
-    #     ).sbi.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
+    F = xr.open_dataset(
+        f_field_path,chunks={"time":1,"lat":-1,"lon":-1}
+        ).F.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
+    fuzzy = xr.open_dataset(
+        fuzzy_path,chunks={"time":1,"lat":-1,"lon":-1}
+        )["__xarray_dataarray_variable__"].sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
+    sbi = xr.open_dataset(
+        sbi_path,chunks={"time":1,"lat":-1,"lon":-1}
+        ).sbi.sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
     
     #Load other datasets that can be used for additional filtering
     angle_ds = load_model_data.get_coastline_angle_kernel(
         compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
         )
-    # hourly_change_ds = xr.open_dataset(
-    #     hourly_change_path,chunks={"time":1,"lat":-1,"lon":-1}
-    #     ).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))
-    hourly_change_ds = None
-    ta = load_model_data.load_aus2200_variable(
+    hourly_change_ds = xr.open_dataset(
+        hourly_change_path,chunks={},drop_variables="dqu_dt"
+        ).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)).chunk({"time":1,"lat":-1,"lon":-1})
+    ta = load_model_data.round_times(
+        load_model_data.load_aus2200_variable(
         "tas",
         t1,
         t2,
@@ -88,8 +90,8 @@ if __name__ == "__main__":
         lon_slice,
         lat_slice,
         "10min",
-        chunks={"time":1,"lat":-1,"lon":-1}
-        )
+        chunks={"time":1,"lat":-1,"lon":-1}),
+        "10min")
     aus2200_vas = load_model_data.round_times(
         load_model_data.load_aus2200_variable(
             "vas",
@@ -119,7 +121,7 @@ if __name__ == "__main__":
     ta = ta.sel(time=ta.time.dt.minute==0)
     aus2200_vas = aus2200_vas.sel(time=aus2200_vas.time.dt.minute==0)
     aus2200_uas = aus2200_uas.sel(time=aus2200_uas.time.dt.minute==0)    
-    vprime, uprime = sea_breeze_funcs.rotate_wind(
+    uprime, vprime = sea_breeze_funcs.rotate_wind(
         aus2200_uas,
         aus2200_vas,
         angle_ds["angle_interp"])
@@ -128,8 +130,7 @@ if __name__ == "__main__":
         lon_slice,
         lat_slice)
     
-    for field_name, field in zip(["Fc"],[Fc]):
-    #for field_name, field in zip(["fuzzy_mean","Fc","F","sbi"],[fuzzy,Fc,F,sbi]):
+    for field_name, field in zip(["Fc","F","fuzzy","sbi"],[Fc,F,fuzzy,sbi]):
     
         print(field_name)
 
@@ -143,7 +144,7 @@ if __name__ == "__main__":
             "sea_breeze_detection/"+model+"/filtered_mask_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".nc"
+                        pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".zarr"
 
         #Run the filtering
         filtered_mask = sea_breeze_filters.filter_3d(
@@ -153,9 +154,9 @@ if __name__ == "__main__":
             lsm=lsm,
             angle_ds=angle_ds,
             vprime=vprime.drop("height"),
-            p=99.9,
+            p=99.75,
             save_mask=True,
             filter_out_path=filter_out_path,
-            props_df_output_path=props_df_out_path,
+            props_df_out_path=props_df_out_path,
             skipna=False,
             **kwargs)

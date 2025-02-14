@@ -250,8 +250,8 @@ def rotate_wind(u,v,theta):
     * theta: xarray dataarray of coastline orientation angles from N
 
     ## Output
-    * vprime: xarray dataarray of wind component perpendicular to the coast
     * uprime: xarray dataarray of wind component parallel to the coast
+    * vprime: xarray dataarray of wind component perpendicular to the coast
     """
 
     #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
@@ -464,6 +464,12 @@ def kinematic_frontogenesis(q,u,v):
     beta = np.arcsin((-ddx_q * np.cos(psi) - ddy_q * np.sin(psi)) / mag_dq)
 
     F = 0.5 * mag_dq * (tot_def * np.cos(2 * beta) - div) * 1.08e9
+
+    out = xr.Dataset({"F":F})
+    out["F"] = out["F"].assign_attrs(
+        units = "g/kg/100km/3hr",
+        long_name = "Moisture frontogenesis",
+        description = "2d kinematic moisture frontogenesis parameter.")  
 
     return xr.Dataset({"F":F})
 

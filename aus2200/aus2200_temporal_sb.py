@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     #Set up argument parser
     parser = argparse.ArgumentParser(
-        prog="AUS2200 frontogenesis",
+        prog="AUS2200 temporal sea breeze functions",
         description="This program applies temporal sea breeze functions to a chosen period of AUS2200 data, such as the hourly difference in temperature, humidity and wind"
     )
     parser.add_argument("t1",type=str,help="Start time (Y-m-d H:M)")
