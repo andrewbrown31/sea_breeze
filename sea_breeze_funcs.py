@@ -158,7 +158,7 @@ def calc_sbi(wind_ds,
 
     #Dataset output and attributes
     sbi_ds = xr.Dataset({
-        "sbi":sbi,}).persist()
+        "sbi":sbi,})#.persist()
         #"sbi_max_h":sbi_max_h})
     
     #Set dataset attributes

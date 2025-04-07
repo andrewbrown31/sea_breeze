@@ -72,7 +72,7 @@ if __name__ == "__main__":
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/era5_global_angles.nc")
+        path_to_load="/g/data/ng72/ab4502/coastline_data/era5_global_angles.nc")
 
     #Calc SBI
     sbi = sea_breeze_funcs.calc_sbi(era5_wind,
@@ -81,16 +81,16 @@ if __name__ == "__main__":
                                 subtract_mean=subtract_mean,
                                 height_method=height_method,
                                 blh_da=era5_zmla["blh"]["blh"],
-                                vert_coord="height")
+                                vert_coord="height").chunk({"time":1,"lat":-1,"lon":-1})
     #print(sbi)
 
     #Save output
-    out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
+    out_path = "/g/data/ng72/ab4502/sea_breeze_detection/"+args.model+"/"
     sbi_fname = "sbi_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                    (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"   
+                    (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"   
     if os.path.isdir(out_path):
         pass
     else:
         os.mkdir(out_path)   
-    sbi_save = sbi.to_netcdf(out_path+sbi_fname,compute=False,engine="netcdf4")
+    sbi_save = sbi.to_zarr(out_path+sbi_fname,compute=False,mode="w")
     progress(sbi_save.persist())

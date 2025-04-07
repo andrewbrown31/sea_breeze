@@ -14,6 +14,14 @@ def metpy_grid_area(lon,lat):
     dy=np.pad(dy,((0,1),(0,0)),mode="edge")
     return dx.to("km"),dy.to("km"),(dx*dy).to("km^2")
 
+def get_aus_bounds():
+    """
+    For Australia
+    """
+    lat_slice = slice(-45.7,-6.9)
+    lon_slice = slice(108,158.5)
+    return lat_slice, lon_slice
+
 def get_seaus_bounds():
     """
     For southeast Australia

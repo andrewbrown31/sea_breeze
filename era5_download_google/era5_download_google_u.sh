@@ -1,12 +1,12 @@
 #!/bin/bash
 
-#PBS -P gb02 
+#PBS -P ng72 
 #PBS -q copyq
 #PBS -l walltime=10:00:00,mem=16GB 
 #PBS -l ncpus=1
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/era5_download_google_u.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/era5_download_google_u.e
-#PBS -l storage=gdata/gb02+gdata/hh5
+#PBS -l storage=gdata/ng72+gdata/hh5
  
 #Set up conda/shell environments 
 module use /g/data/hh5/public/modules

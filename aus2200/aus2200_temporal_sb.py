@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument("--lat2",default=-6.9,type=float,help="End latitude")
     parser.add_argument("--lon1",default=108,type=float,help="Start longitude")
     parser.add_argument("--lon2",default=158.5,type=float,help="End longitude")
-    parser.add_argument("-e","--exp_id",default="mjo-elnino",type=str,help="Experiment id for AUS2200 mjo runs") 
+    parser.add_argument("-e","--exp_id",default="mjo-elnino2016",type=str,help="Experiment id for AUS2200 mjo runs") 
     parser.add_argument('--smooth',default=False,action=argparse.BooleanOptionalAction,help="Smooth the data before calculating diagnostics")
     parser.add_argument("--sigma",default=2,type=int,help="Sigma for smoothing")
     args = parser.parse_args()
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     exp_id = args.exp_id
 
     #Setup out paths
-    out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
+    out_path = "/g/data/ng72/ab4502/sea_breeze_detection/"+args.model+"/"
     F_hourly_fname = "F_hourly_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"               
     if os.path.isdir(out_path):
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     else:
         chunks = {"time":-1,"lat":{},"lon":{}}
     orog, lsm = load_model_data.load_aus2200_static(
-        "mjo-elnino",
+        exp_id,
         lon_slice,
         lat_slice)
     aus2200_vas = load_model_data.round_times(
@@ -66,7 +66,7 @@ if __name__ == "__main__":
             "vas",
             t1,
             t2,
-            "mjo-elnino",
+            exp_id,
             lon_slice,
             lat_slice,
             "10min",
@@ -81,7 +81,7 @@ if __name__ == "__main__":
             "uas",
             t1,
             t2,
-            "mjo-elnino",
+            exp_id,
             lon_slice,
             lat_slice,
             "10min",
@@ -91,48 +91,44 @@ if __name__ == "__main__":
             sigma=args.sigma,
             smooth_axes=smooth_axes),
               "10min")
-    aus2200_hus = load_model_data.round_times(
-        load_model_data.load_aus2200_variable(
-            "hus",
-            t1,
-            t2,
-            "mjo-elnino",
-            lon_slice,
-            lat_slice,
-            "10min",
-            chunks=chunks,
-            smooth=args.smooth,
-            sigma=args.sigma,
-            smooth_axes=smooth_axes),
-              "10min")
-    aus2200_tas = load_model_data.round_times(
-            load_model_data.load_aus2200_variable(
-                "tas",
-                t1,
-                t2,
-                "mjo-elnino",
-                lon_slice,
-                lat_slice,
-                "10min",
-                chunks=chunks,
-                smooth=args.smooth,
-                sigma=args.sigma,
-                smooth_axes=smooth_axes),
-                "10min")    
+    aus2200_hus = load_model_data.load_aus2200_variable(
+        "hus",
+        t1,
+        t2,
+        exp_id,
+        lon_slice,
+        lat_slice,
+        "1hr",
+        smooth=args.smooth,
+        sigma=args.sigma,
+        smooth_axes=smooth_axes,
+        hgt_slice=slice(0,10),
+        chunks=chunks).sel(lev=5)
+    aus2200_tas = load_model_data.load_aus2200_variable(
+        "ta",
+        t1,
+        t2,
+        exp_id,
+        lon_slice,
+        lat_slice,
+        "1hr",
+        smooth=args.smooth,
+        sigma=args.sigma,
+        smooth_axes=smooth_axes,
+        hgt_slice=slice(0,10),
+        chunks=chunks).sel(lev=5)      
     angle_ds = load_model_data.get_coastline_angle_kernel(
         lsm,
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200.nc",
+        path_to_load="/g/data/ng72/ab4502/coastline_data/aus2200.nc",
         smooth=args.smooth,
         sigma=args.sigma)
 
     #Just do the hourly data
     aus2200_vas = aus2200_vas.sel(time=aus2200_vas.time.dt.minute==0)
     aus2200_uas = aus2200_uas.sel(time=aus2200_uas.time.dt.minute==0)
-    aus2200_hus = aus2200_hus.sel(time=aus2200_hus.time.dt.minute==0)
-    aus2200_tas = aus2200_tas.sel(time=aus2200_tas.time.dt.minute==0)
 
     #Rechunk
     # aus2200_hus = aus2200_hus.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})

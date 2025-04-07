@@ -100,7 +100,7 @@ if __name__ == "__main__":
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/barra_c.nc",
+        path_to_load="/g/data/ng72/ab4502/coastline_data/barra_c.nc",
         smooth=args.smooth,
         sigma=args.sigma)
 
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     )
 
     #Setup out paths
-    out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
+    out_path = "/g/data/ng72/ab4502/sea_breeze_detection/"+args.model+"/"
     F_fname = "F_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                     (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"   
     Fc_fname = "Fc_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\

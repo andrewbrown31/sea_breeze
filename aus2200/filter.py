@@ -14,6 +14,7 @@ if __name__ == "__main__":
         description="This program loads a sea breeze diagnostic field from AUS2200 and applies a series of filters to it"
     )
     parser.add_argument("--model",default="aus2200",type=str,help="Model directory name for input/output. Could be aus2200 (default) or maybe aus2200_pert")
+    parser.add_argument("--filter_name",default="",type=str,help="Filter name to add to the output file names")
     args = parser.parse_args()
 
     #Set up dask client
@@ -24,7 +25,8 @@ if __name__ == "__main__":
 
     #Set up paths to sea breeze diagnostics (output from sea_breeze_funcs.py)
     model = args.model
-    path = "/g/data/gb02/ab4502/"
+    filter_name = args.filter_name
+    path = "/g/data/ng72/ab4502/"
     fc_field_path = path + "sea_breeze_detection/"+model+"/Fc_mjo-elnino_201601010000_201601312300.zarr"
     f_field_path = path + "sea_breeze_detection/"+model+"/F_mjo-elnino_201601010000_201601312300.zarr"
     sbi_path = path+ "sea_breeze_detection/"+model+"/sbi_mjo-elnino_201601010100_201601312300.zarr"
@@ -35,8 +37,8 @@ if __name__ == "__main__":
     angle_ds_path = path + "coastline_data/aus2200.nc"
     
     #Set up domain bounds and variable name from field_path dataset
-    t1 = "2016-01-01 00:00"
-    t2 = "2016-01-31 23:00"
+    t1 = "2016-01-06 00:00"
+    t2 = "2016-01-12 23:00"
     lat_slice = slice(-45.7,-6.9)
     lon_slice = slice(108,158.5)
 
@@ -46,9 +48,9 @@ if __name__ == "__main__":
         "aspect_filter":True,
         "area_filter":True,        
         "land_sea_temperature_filter":True,                    
-        "temperature_change_filter":True,
-        "humidity_change_filter":True,
-        "wind_change_filter":True,
+        "temperature_change_filter":False,
+        "humidity_change_filter":False,
+        "wind_change_filter":False,
         "propagation_speed_filter":True,
         "dist_to_coast_filter":False,
         "output_land_sea_temperature_diff":False,        
@@ -81,23 +83,23 @@ if __name__ == "__main__":
     hourly_change_ds = xr.open_dataset(
         hourly_change_path,chunks={},drop_variables="dqu_dt"
         ).sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2)).chunk({"time":1,"lat":-1,"lon":-1})
-    ta = load_model_data.round_times(
-        load_model_data.load_aus2200_variable(
-        "tas",
+    ta = load_model_data.load_aus2200_variable(
+        "ta",
         t1,
         t2,
-        "mjo-elnino",
+        "mjo-elnino2016",
         lon_slice,
         lat_slice,
-        "10min",
-        chunks={"time":1,"lat":-1,"lon":-1}),
-        "10min")
+        "1hr",
+        smooth=False,
+        hgt_slice=slice(0,10),
+        chunks={"time":1,"lat":-1,"lon":-1}).sel(lev=5)
     aus2200_vas = load_model_data.round_times(
         load_model_data.load_aus2200_variable(
             "vas",
             t1,
             t2,
-            "mjo-elnino",
+            "mjo-elnino2016",
             lon_slice,
             lat_slice,
             "10min",
@@ -110,7 +112,7 @@ if __name__ == "__main__":
             "uas",
             t1,
             t2,
-            "mjo-elnino",
+            "mjo-elnino2016",
             lon_slice,
             lat_slice,
             "10min",
@@ -118,7 +120,6 @@ if __name__ == "__main__":
             staggered="lon",
             smooth=False),
             "10min")
-    ta = ta.sel(time=ta.time.dt.minute==0)
     aus2200_vas = aus2200_vas.sel(time=aus2200_vas.time.dt.minute==0)
     aus2200_uas = aus2200_uas.sel(time=aus2200_uas.time.dt.minute==0)    
     uprime, vprime = sea_breeze_funcs.rotate_wind(
@@ -126,7 +127,7 @@ if __name__ == "__main__":
         aus2200_vas,
         angle_ds["angle_interp"])
     orog, lsm = load_model_data.load_aus2200_static(
-        "mjo-elnino",
+        "mjo-elnino2016",
         lon_slice,
         lat_slice)
     
@@ -136,12 +137,12 @@ if __name__ == "__main__":
 
         #Set up output paths
         props_df_out_path = path+\
-            "sea_breeze_detection/"+model+"/props_df_"+\
+            "sea_breeze_detection/"+model+"/props_df_"+filter_name+"_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".csv" 
         filter_out_path = path+\
-            "sea_breeze_detection/"+model+"/filtered_mask_"+\
+            "sea_breeze_detection/"+model+"/filtered_mask_"+filter_name+"_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".zarr"
@@ -149,12 +150,12 @@ if __name__ == "__main__":
         #Run the filtering
         filtered_mask = sea_breeze_filters.filter_3d(
             field,
-            hourly_change_ds=hourly_change_ds,
+            hourly_change_ds=None,
             ta=ta,
             lsm=lsm,
             angle_ds=angle_ds,
             vprime=vprime.drop("height"),
-            p=99.75,
+            p=99.5,
             save_mask=True,
             filter_out_path=filter_out_path,
             props_df_out_path=props_df_out_path,

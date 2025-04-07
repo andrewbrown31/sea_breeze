@@ -10,8 +10,8 @@ if __name__ == "__main__":
 
     #Set up argument parser
     parser = argparse.ArgumentParser(
-        prog="ERA5 frontogenesis",
-        description="This program applies frontogenesis functions to a chosen period of ERA5 data"
+        prog="ERA5 temporal sea breeze functions",
+        description="This program applies temporal sea breeze functions to a chosen period of ERA5 data, such as the hourly difference in temperature, humidity and wind"
     )
     parser.add_argument("t1",type=str,help="Start time (Y-m-d H:M)")
     parser.add_argument("t2",type=str,help="End time (Y-m-d H:M)")
@@ -81,17 +81,7 @@ if __name__ == "__main__":
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/era5.nc")
-
-    #Calc moisture flux gradient
-    F_dqdt = sea_breeze_funcs.moisture_flux_gradient(
-        era5_huss,
-        era5_uas,
-        era5_vas,
-        angle_ds["angle_interp"],
-        lat_chunk="auto",
-        lon_chunk="auto"
-    )
+        path_to_load="/g/data/ng72/ab4502/coastline_data/era5.nc")
 
     #Calc hourly change conditions
     F_hourly = sea_breeze_funcs.hourly_change(
@@ -105,20 +95,15 @@ if __name__ == "__main__":
     )    
 
     #Setup out paths
-    out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
-    F_dqdt_fname = "F_dqdt_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"       
+    out_path = "/g/data/ng72/ab4502/sea_breeze_detection/"+args.model+"/"   
     F_hourly_fname = "F_hourly_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"               
+                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"               
     if os.path.isdir(out_path):
         pass
     else:
         os.mkdir(out_path)   
 
     #Save the output
-    print("INFO: Computing moisture flux change...")
-    F_dqdt_save = F_dqdt.to_netcdf(out_path+F_dqdt_fname,compute=False,engine="netcdf4")
-    progress(F_dqdt_save.persist())
     print("INFO: Computing hourly changes...")
-    F_hourly_save = F_hourly.to_netcdf(out_path+F_hourly_fname,compute=False,engine="netcdf4")
+    F_hourly_save = F_hourly.to_zarr(out_path+F_hourly_fname,compute=False,mode="w")
     progress(F_hourly_save.persist())    

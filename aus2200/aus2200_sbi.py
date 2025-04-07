@@ -24,7 +24,7 @@ if __name__ == "__main__":
     parser.add_argument("--hgt2",default=4500,type=float,help="End height to load from disk")    
     parser.add_argument('--interp_hgt',default=False,action=argparse.BooleanOptionalAction,help="Interpolate AUS2200 model level data to regular height levels, from hgt1 to hgt2 and with a spacing of dh")
     parser.add_argument("--dh",default=100,type=float,help="If interp_hgt, then this is the height spacing in meters")    
-    parser.add_argument("-e","--exp_id",default="mjo-elnino",type=str,help="Experiment id for AUS2200 mjo runs")
+    parser.add_argument("-e","--exp_id",default="mjo-elnino2016",type=str,help="Experiment id for AUS2200 mjo runs")
     parser.add_argument('--subtract_mean',default=False,action=argparse.BooleanOptionalAction,help="Subtract mean to calculate SBI on perturbation winds")
     parser.add_argument("--lev_chunk",default=0,type=int,help="Chunk size for vertical level dim. Default is on-disk chunks")
     parser.add_argument("--time_chunk",default=0,type=int,help="Chunk size for time dim. Default is on-disk chunks")
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     #chunks = {"lev":lev_chunk,"time":time_chunk,"lat":lat_chunk,"lon":lon_chunk}
     chunks = {"lev":lev_chunk,"time":time_chunk,"lat":lat_chunk,"lon":lon_chunk}
     orog, lsm = load_model_data.load_aus2200_static(
-        "mjo-elnino",
+        exp_id,
         lon_slice,
         lat_slice)
     aus2200_va = load_model_data.round_times(
@@ -94,7 +94,7 @@ if __name__ == "__main__":
             "va",
             t1,
             t2,
-            "mjo-elnino",
+            exp_id,
             lon_slice,
             lat_slice,
             "1hr",
@@ -112,7 +112,7 @@ if __name__ == "__main__":
             "ua",
             t1,
             t2,
-            "mjo-elnino",
+            exp_id,
             lon_slice,
             lat_slice,
             "1hr",
@@ -130,7 +130,7 @@ if __name__ == "__main__":
             "zmla",
             t1,
             t2,
-            "mjo-elnino",
+            exp_id,
             lon_slice,
             lat_slice,
             "1hr",
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/aus2200.nc",
+        path_to_load="/g/data/ng72/ab4502/coastline_data/aus2200.nc",
         smooth=args.smooth,
         sigma=args.sigma)
 
@@ -166,14 +166,13 @@ if __name__ == "__main__":
     progress(sbi)
 
     #Save output
-    out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
+    out_path = "/g/data/ng72/ab4502/sea_breeze_detection/"+args.model+"/"
     sbi_fname = "sbi_"+exp_id+"_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                     (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"   
     if os.path.isdir(out_path):
         pass
     else:
         os.mkdir(out_path)   
-    #sbi_save = sbi.to_netcdf(out_path+sbi_fname,compute=False)
 
     #Add attrs
     sbi = sbi.assign_attrs(

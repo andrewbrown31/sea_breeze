@@ -5,8 +5,18 @@ import os
 import pandas as pd
 from dask.distributed import Client, progress
 import warnings
+import argparse
 
 if __name__ == "__main__":
+
+    #Set up argument parser
+    parser = argparse.ArgumentParser(
+        prog="ERA5 filtering",
+        description="This program loads a sea breeze diagnostic field from ERA5 and applies a series of filters to it"
+    )
+    parser.add_argument("--model",default="era5",type=str,help="Model directory name for input/output. Could be era5 (default)")
+    parser.add_argument("--filter_name",default="",type=str,help="Filter name to add to the output file names")
+    args = parser.parse_args()
 
     #Set up dask client
     client = Client()
@@ -15,19 +25,22 @@ if __name__ == "__main__":
     warnings.simplefilter("ignore")
 
     #Set up paths to sea_breeze_funcs data output and other inputs
-    path = "/g/data/gb02/ab4502/"
-    fc_field_path = path + "sea_breeze_detection/era5/Fc_201601010000_201601312300.nc"
-    f_field_path = path + "sea_breeze_detection/era5/F_201601010000_201601312300.nc"
-    sbi_field_path = path+ "sea_breeze_detection/era5/sbi_201601010000_201601312300.nc"
-    fuzzy_field_path = path+ "sea_breeze_detection/era5/fuzzy_201601010000_201601312300.nc"
+    model = args.model
+    filter_name = args.filter_name
+    path = "/g/data/ng72/ab4502/"
+    fc_field_path = path + "sea_breeze_detection/"+model+"/Fc_201601010000_201601312300.nc"
+    f_field_path = path + "sea_breeze_detection/"+model+"/F_201601010000_201601312300.nc"
+    sbi_field_path = path+ "sea_breeze_detection/"+model+"/sbi_201601010000_201601312300.nc"
+    fuzzy_field_path = path+ "sea_breeze_detection/"+model+"/fuzzy_201601010000_201601312300.nc"
 
     #Set up paths to other datasets that can be used for additional filtering
     hourly_change_path = path+ "sea_breeze_detection/era5/F_hourly_201601010000_201601312300.nc"
     angle_ds_path = path + "coastline_data/era5.nc"
     
     #Set up domain bounds and variable name from field_path dataset
-    t1 = "2016-01-01 00:00"
-    t2 = "2016-01-31 23:00"
+    t1 = "2016-01-06 06:00"
+    #t2 = "2016-01-06 06:00"
+    t2 = "2016-01-12 23:00"
     lat_slice = slice(-45.7,-6.9)
     lon_slice = slice(108,158.5)
 
@@ -37,9 +50,9 @@ if __name__ == "__main__":
         "aspect_filter":True,
         "area_filter":True,        
         "land_sea_temperature_filter":True,                    
-        "temperature_change_filter":True,
-        "humidity_change_filter":True,
-        "wind_change_filter":True,
+        "temperature_change_filter":False,
+        "humidity_change_filter":False,
+        "wind_change_filter":False,
         "propagation_speed_filter":True,
         "dist_to_coast_filter":False,
         "output_land_sea_temperature_diff":False,        
@@ -95,12 +108,12 @@ if __name__ == "__main__":
 
         #Set up output paths
         props_df_out_path = path+\
-            "sea_breeze_detection/era5/props_df_"+\
+            "sea_breeze_detection/"+model+"/props_df_"+filter_name+"_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".csv" 
         filter_out_path = path+\
-            "sea_breeze_detection/era5/filtered_mask_"+\
+            "sea_breeze_detection/"+model+"/filtered_mask_"+filter_name+"_"+\
                 field_name+"_"+\
                     pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                         pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".zarr"
@@ -113,7 +126,7 @@ if __name__ == "__main__":
             lsm=lsm,
             angle_ds=angle_ds,
             vprime=vprime,
-            p=99.75,
+            p=99.5,
             save_mask=True,
             filter_out_path=filter_out_path,
             props_df_out_path=props_df_out_path,

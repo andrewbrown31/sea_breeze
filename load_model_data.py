@@ -14,7 +14,8 @@ import warnings
 from tqdm.dask import TqdmCallback
 
 def interp_scipy(x, xp, fp):
-    return scipy.interpolate.interp1d(x, xp, fp, kind="linear", fill_value="extrapolate")
+    f = scipy.interpolate.interp1d(xp, fp, kind="linear", fill_value="extrapolate")
+    return f(x)
 
 def interp_model_level_to_z(z_da,var_da,mdl_dim,heights):
 
@@ -59,9 +60,9 @@ def load_era5_ml_and_interp(t1,t2,lat_slice,lon_slice,
     t1: end time in %Y-%m-%d %H:%M"
     lat_slice: a slice to restrict lat domain
     lon_slice: a slice to restrict lon domain    
-    upaths: an array of paths for u data. if none use time and look in gb02 dir
-    vpaths: an array of paths for v data. if none use time and look in gb02 dir
-    zpaths: an array of paths for z data. if none use time and look in gb02 dir    
+    upaths: an array of paths for u data. if none use time and look in ng72 dir
+    vpaths: an array of paths for v data. if none use time and look in ng72 dir
+    zpaths: an array of paths for z data. if none use time and look in ng72 dir    
     heights: to interpolate to (in metres)
     chunks: dict describing the number of chunks. see xr.open_dataset
     """
@@ -72,11 +73,11 @@ def load_era5_ml_and_interp(t1,t2,lat_slice,lon_slice,
             pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m%d").astype(int).values
         time_ends = [(t + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1) 
                      for t in pd.to_datetime(time_starts,format="%Y%m%d")]
-        upaths = ["/g/data/gb02/ab4502/era5_model_lvl/era5_mdl_u_" + 
+        upaths = ["/g/data/ng72/ab4502/era5_model_lvl/era5_mdl_u_component_of_wind_" + 
                   str(t1) + "_" + t2.strftime("%Y%m%d") +".nc" for t1,t2 in zip(time_starts,time_ends)]
-        vpaths = ["/g/data/gb02/ab4502/era5_model_lvl/era5_mdl_v_" + 
+        vpaths = ["/g/data/ng72/ab4502/era5_model_lvl/era5_mdl_v_component_of_wind_" + 
                         str(t1) + "_" + t2.strftime("%Y%m%d") +".nc" for t1,t2 in zip(time_starts,time_ends)]
-        zpaths = ["/g/data/gb02/ab4502/era5_model_lvl/era5_mdl_z_" + 
+        zpaths = ["/g/data/ng72/ab4502/era5_model_lvl/era5_mdl_geopotential_" + 
                         str(t1) + "_" + t2.strftime("%Y%m%d") +".nc" for t1,t2 in zip(time_starts,time_ends)]                
 
     #Load the data
@@ -86,7 +87,7 @@ def load_era5_ml_and_interp(t1,t2,lat_slice,lon_slice,
     topo,lsm,_= load_era5_static(lon_slice,lat_slice,t1,t2)
     f = xr.merge((u,v,z))
 
-    #Adjust geopotential to height above surface, using topography data saved on gb02
+    #Adjust geopotential to height above surface, using topography data saved on ng72
     g = 9.80665    #https://confluence.ecmwf.int/display/CKB/ERA5%3A+compute+pressure+and+geopotential+on+model+levels%2C+geopotential+height+and+geometric+height#heading-Geopotentialheight
     topo = topo / g
     f["geopotential"] = (f["geopotential"] / g) - topo
@@ -187,7 +188,7 @@ def remove_era5_inland_lakes(lsm,cl):
 def load_era5_ml(path,t1,t2,lat_slice,lon_slice,chunks={"time":"auto","hybrid":-1}):
 
     '''
-    Load ERA5 model level data, as downloaded from the Google cloud and stored on gb02 (using era5_download_google.ipynb)
+    Load ERA5 model level data, as downloaded from the Google cloud and stored on ng72 (using era5_download_google.ipynb)
     t1: start time in %Y-%m-%d %H:%M"
     t1: end time in %Y-%m-%d %H:%M"
     lat_slice: a slice to restrict lat domain
@@ -322,7 +323,7 @@ def barra_sfc_moisture(huss,ps,tas):
 def load_aus2200_static(exp_id,lon_slice,lat_slice,chunks="auto"):
 
     '''
-    Load static fields for the mjo-enso AUS2200 experiment, stored on the ua8 project
+    Load static fields for the mjo-enso AUS2200 experiment, stored on the bs94 project
 
     ## Input
     * exp_id: string describing the experiment. either 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'
@@ -332,11 +333,11 @@ def load_aus2200_static(exp_id,lon_slice,lat_slice,chunks="auto"):
     * lon_slice: a slice to restrict lon domain
     '''
 
-    assert exp_id in ['mjo-elnino', 'mjo-lanina', 'mjo-neutral'], "exp_id must either be 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'"
+    assert exp_id in ['mjo-elnino2016', 'mjo-lanina2018', 'mjo-neutral2013'], "exp_id must either be 'mjo-elnino2016', 'mjo-lanina2018' or 'mjo-neutral2013'"
     
-    orog = xr.open_dataset("/g/data/ua8/AUS2200/"+exp_id+"/v1-0/fx/orog/orog_AUS2200_"+exp_id+"_fx.nc",chunks=chunks).\
+    orog = xr.open_mfdataset("/g/data/bs94/AUS2200/"+exp_id+"/v1-0/fx/orog/orog_AUS2200_*_fx.nc",chunks=chunks).\
             sel(lat=lat_slice,lon=lon_slice)
-    lsm = xr.open_dataset("/g/data/ua8/AUS2200/"+exp_id+"/v1-0/fx/lmask/lmask_AUS2200_"+exp_id+"_fx.nc",chunks=chunks).\
+    lsm = xr.open_mfdataset("/g/data/bs94/AUS2200/"+exp_id+"/v1-0/fx/lmask/lmask_AUS2200_*_fx.nc",chunks=chunks).\
             sel(lat=lat_slice,lon=lon_slice)
 
     return orog.orog, ((lsm.lmask==100)*1)
@@ -345,8 +346,11 @@ def gaussian_filter_time_slice(time_slice,sigma,axes):
     """
     Apply a gaussian filter to a time slice of data. For use with map_blocks
     """
-    out_ds = xr.DataArray(scipy.ndimage.gaussian_filter(time_slice.squeeze(), sigma, axes=axes),
-                          dims=time_slice.squeeze().dims, coords=time_slice.squeeze().coords)
+    #out_ds = xr.DataArray(scipy.ndimage.gaussian_filter(time_slice.squeeze(), sigma, axes=axes),
+    #                      dims=time_slice.squeeze().dims, coords=time_slice.squeeze().coords)
+    out_ds = xr.DataArray(scipy.ndimage.gaussian_filter(
+        time_slice.isel(time=0), sigma, axes=axes
+        ),dims=time_slice.isel(time=0).dims, coords=time_slice.isel(time=0).coords)
     out_ds = out_ds.expand_dims("time")
     out_ds["time"] = time_slice.time
     return out_ds
@@ -354,7 +358,7 @@ def gaussian_filter_time_slice(time_slice,sigma,axes):
 def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022, smooth=False, smooth_axes=None, sigma=2, interp_hgts=False, dh=100):
 
     '''
-    Load variables from the mjo-enso AUS2200 experiment, stored on the ua8 project.
+    Load variables from the mjo-enso AUS2200 experiment, stored on the bs94 project.
 
     Note that if the data is being smoothed or interpolated, then the relevant dimensions are set to -1 in the chunks dict
 
@@ -394,7 +398,7 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
     '''
 
     #This code makes sure the inputs for experiment id and time frequency match what is on disk 
-    assert exp_id in ['mjo-elnino', 'mjo-lanina', 'mjo-neutral'], "exp_id must either be 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'"
+    assert exp_id in ['mjo-elnino2016', 'mjo-lanina2018', 'mjo-neutral2013'], "exp_id must either be 'mjo-elnino2016', 'mjo-lanina2018' or 'mjo-neutral2013'"
     assert freq in ["10min", "1hr", "1hrPlev"], "exp_id must either be '10min', '1hr', '1hrPlev'"
 
     #We are loading a list of files from disk using xr.open_mfdataset. This preprocessing 
@@ -427,7 +431,7 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
             raise ValueError("Invalid stagger dim")
     
     #Load the data from disk. If hgt_slice is not None, then we are loading 3D data, with an option to interpolate to regular height levels
-    fnames = "/g/data/ua8/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200_"+exp_id+"_*.nc"
+    fnames = "/g/data/bs94/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200*.nc"
     if hgt_slice is not None:
         da = xr.open_mfdataset(fnames, 
                                chunks=chunks, 
@@ -435,7 +439,7 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
                                preprocess=_preprocess_hgt).sel(time=slice(t1,t2))[vname]
         if interp_hgts:
             chunks["lev"] = -1
-            da = da.interp(lev=np.arange(hgt_slice.start,hgt_slice.stop+dh,dh),method="linear",kwargs={"fill_value":"extrapolate"})
+            da = da.chunk({"lev":-1}).interp(lev=np.arange(hgt_slice.start,hgt_slice.stop+dh,dh),method="linear",kwargs={"fill_value":"extrapolate"})
     else:
         da = xr.open_mfdataset(fnames,
                                chunks=chunks,

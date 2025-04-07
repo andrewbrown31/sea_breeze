@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     #Set up argument parser
     parser = argparse.ArgumentParser(
-        prog="AUS2200 frontogenesis",
+        prog="ERA5 frontogenesis",
         description="This program applies frontogenesis functions to a chosen period of ERA5 data"
     )
     parser.add_argument("t1",type=str,help="Start time (Y-m-d H:M)")
@@ -75,7 +75,7 @@ if __name__ == "__main__":
         compute=False,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
-        path_to_load="/g/data/gb02/ab4502/coastline_data/era5_global_angles.nc")
+        path_to_load="/g/data/ng72/ab4502/coastline_data/era5_global_angles.nc")
 
     #Calc 2d kinematic moisture frontogenesis
     F = sea_breeze_funcs.kinematic_frontogenesis(
@@ -93,15 +93,11 @@ if __name__ == "__main__":
     )
 
     #Setup out paths
-    out_path = "/g/data/gb02/ab4502/sea_breeze_detection/"+args.model+"/"
+    out_path = "/g/data/ng72/ab4502/sea_breeze_detection/"+args.model+"/"
     F_fname = "F_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                    (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"   
+                    (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"   
     Fc_fname = "Fc_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"       
-    F_dqdt_fname = "F_dqdt_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"       
-    F_hourly_fname = "F_hourly_"+pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
-                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".nc"               
+                        (pd.to_datetime(t2).strftime("%Y%m%d%H%M"))+".zarr"       
     if os.path.isdir(out_path):
         pass
     else:
@@ -109,8 +105,8 @@ if __name__ == "__main__":
 
     #Save the output
     print("INFO: Computing frontogenesis...")
-    F_save = F.to_netcdf(out_path+F_fname,compute=False,engine="netcdf4")
+    F_save = F.to_zarr(out_path+F_fname,compute=False,mode="w")
     progress(F_save.persist())
     print("INFO: Computing coast-relative frontogenesis...")
-    Fc_save = Fc.to_netcdf(out_path+Fc_fname,compute=False,engine="netcdf4")
+    Fc_save = Fc.to_zarr(out_path+Fc_fname,compute=False,mode="w")
     progress(Fc_save.persist())

@@ -5,6 +5,8 @@ import numpy as np
 import datetime as dt
 import zipfile
 import glob
+import pyproj
+import cartopy.crs as ccrs
 
 def load_half_hourly_stn_obs(state,time_slice):
 
@@ -80,3 +82,38 @@ def load_radar_level1b(rid,times):
     radar_ds = xr.open_mfdataset(target_files)
 
     return radar_ds
+
+def load_hima(datetime,x_slice=slice(-3e6,2e6),y_slice=slice(-1e6,-4.5e6)):
+
+    """
+    Load Himawari data for a given time slice. The default x and y slices correspond to
+    mainland Australia
+    """
+
+    #Load a single time slice of Himawari data
+    ds = xr.open_mfdataset("/g/data/ra22/satellite-products/arc/obs/himawari-ahi/fldk/latest/"+\
+                          datetime.strftime("%Y")+"/"+\
+                          datetime.strftime("%m")+"/"+\
+                          datetime.strftime("%d")+"/"+\
+                          datetime.strftime("%H%M")+"/"+\
+                          datetime.strftime("%Y%m%d%H%M%S")+\
+                          "-P1S-ABOM_CREFL_B03-PRJ_GEOS141_500-HIMAWARI*-AHI.nc",chunks={"x":-1,"y":-1})
+
+    #Define geostationary projection from file metadata projections firstly with cartopy then pyproj
+    ccrs_proj = ccrs.Geostationary(central_longitude=ds["geostationary"].attrs["longitude_of_projection_origin"],satellite_height=35785863)
+    pyproj_proj = pyproj.Proj(ccrs_proj)
+
+    #Slice the dataset in x-y space. The defaults here roughly correspond to mainland Australia
+    ds = ds.sel(x=x_slice,y=y_slice)
+    
+    return ds, pyproj_proj, ccrs_proj
+
+def get_lat_lons(ds, proj):
+
+    #Define x and y 2d coordinate arrays
+    xx,yy=np.meshgrid(ds["x"],ds["y"])
+
+    #Retrieve lats and lons from the projection
+    lons, lats = proj(xx, yy, inverse=True)
+
+    return lons, lats

@@ -18,7 +18,7 @@ def plot_pcolormesh(da,vmin=None,vmax=None,save=True,fname="temp",cmap="viridis"
     da.plot.pcolormesh(ax=ax,transform=ccrs.PlateCarree(),vmin=vmin,vmax=vmax)
     ax.coastlines()
     if save:
-        plt.savefig("/scratch/gb02/ab4502/temp_figs/"+fname+".png",bbox_inches="tight",dpi=300)
+        plt.savefig("/scratch/ng72/ab4502/temp_figs/"+fname+".png",bbox_inches="tight",dpi=300)
 
 def animate_pcolormesh(datasets, figsize=(20,5), rows=None, cols=None, vmins=None, vmaxs=None, fname="temp", cmaps=None, titles=None):
     N = len(datasets)
@@ -54,13 +54,13 @@ def animate_pcolormesh(datasets, figsize=(20,5), rows=None, cols=None, vmins=Non
             ax.set_title(title + "\n" + str(da.isel(time=frame).time.values))
 
     ani = animation.FuncAnimation(fig, update, frames=len(datasets[0].time), repeat=False)
-    ani.save('/g/data/gb02/ab4502/figs/animations/' + fname + '.mp4', writer='ffmpeg', dpi=300)
+    ani.save('/g/data/ng72/ab4502/figs/animations/' + fname + '.mp4', writer='ffmpeg', dpi=300)
     #plt.close()
 
-def plotmasks_1fields(ds,fig,tt,framedim,vmins,vmaxs,field_titles,**kwargs):
+def plotmasks_1fields(ds,fig,tt,framedim,vmins,vmaxs,field_titles,cmap,**kwargs):
 
     ax1, ax2, ax3 = fig.subplots(1,3,subplot_kw={"projection":ccrs.PlateCarree()}).flatten()
-    ds["field1"].isel({framedim:tt}).plot(ax=ax1,vmin=vmins[0],vmax=vmaxs[0],transform=ccrs.PlateCarree(),extend="both")
+    ds["field1"].isel({framedim:tt}).plot(ax=ax1,vmin=vmins[0],vmax=vmaxs[0],transform=ccrs.PlateCarree(),extend="both",cmap=cmap)
     ds["mask1"].isel({framedim:tt}).plot(ax=ax2,vmin=0,vmax=1,transform=ccrs.PlateCarree(),cmap="Blues")
     ds["filtered_mask1"].isel({framedim:tt}).plot(ax=ax3,vmin=0,vmax=1,transform=ccrs.PlateCarree(),cmap="Blues")
 
@@ -253,6 +253,26 @@ def plotmasks_4fields_only(ds,fig,tt,framedim,vmins,vmaxs,field_titles,**kwargs)
     
     return None, None   
 
+def xmovie_animation_plotmasks_1fields(ds,vmins,vmaxs,field_titles=["Field1","Field2"],cmap="viridis"):
+
+    mov = xmovie.Movie(
+        ds,
+        pixelwidth=3000,
+        pixelheight=1000,
+        plotfunc=plotmasks_1fields,
+        vmins=vmins,
+        vmaxs=vmaxs,
+        input_check=False,
+        field_titles=field_titles,
+        cmap=cmap
+    )
+    mov.save(
+        "/scratch/ng72/ab4502/temp_figs/animation.mp4",
+        overwrite_existing=True,
+        parallel=True,
+        progress=True,
+        framerate=3)
+
 def xmovie_animation_plotmasks_2fields(ds,vmins,vmaxs,field_titles=["Field1","Field2"]):
 
     mov = xmovie.Movie(
@@ -266,7 +286,7 @@ def xmovie_animation_plotmasks_2fields(ds,vmins,vmaxs,field_titles=["Field1","Fi
         field_titles=field_titles
     )
     mov.save(
-        "/scratch/gb02/ab4502/temp_figs/animation.mp4",
+        "/scratch/ng72/ab4502/temp_figs/animation.mp4",
         overwrite_existing=True,
         parallel=True,
         progress=True,
@@ -285,7 +305,7 @@ def xmovie_animation_plotmasks_3fields(ds,vmins,vmaxs,field_titles=["Field1","Fi
         field_titles=field_titles
     )
     mov.save(
-        "/scratch/gb02/ab4502/temp_figs/animation.mp4",
+        "/scratch/ng72/ab4502/temp_figs/animation.mp4",
         overwrite_existing=True,
         parallel=True,
         progress=True,
@@ -295,7 +315,7 @@ def xmovie_animation_plotmasks_4fields(ds,vmins,vmaxs,field_titles=["Field1","Fi
 
     mov = xmovie.Movie(
         ds,
-        pixelwidth=1920,
+        pixelwidth=2500,
         pixelheight=1920,
         plotfunc=plotmasks_4fields,
         vmins=vmins,
@@ -304,7 +324,7 @@ def xmovie_animation_plotmasks_4fields(ds,vmins,vmaxs,field_titles=["Field1","Fi
         field_titles=field_titles
     )
     mov.save(
-        "/scratch/gb02/ab4502/temp_figs/animation.mp4",
+        "/scratch/ng72/ab4502/temp_figs/animation.mp4",
         overwrite_existing=True,
         parallel=True,
         progress=True,
@@ -323,7 +343,7 @@ def xmovie_animation_plotmasks_4fields_only(ds,vmins,vmaxs,field_titles=["Field1
         field_titles=field_titles
     )
     mov.save(
-        "/scratch/gb02/ab4502/temp_figs/animation.mp4",
+        "/scratch/ng72/ab4502/temp_figs/animation.mp4",
         overwrite_existing=True,
         parallel=True,
         progress=True,
@@ -345,7 +365,7 @@ def xmovie_animation_plotmasks_4models(ds,vmins,vmaxs,cmaps,field_titles=["Field
     if outname is None:
         outname = "animation"
     mov.save(
-        "/scratch/gb02/ab4502/temp_figs/"+outname+".mp4",
+        "/scratch/ng72/ab4502/temp_figs/"+outname+".mp4",
         overwrite_existing=True,
         parallel=False,
         progress=True,
@@ -379,7 +399,7 @@ def xmovie_animation_plot_radar(ds,latitude,longitude,vmin,vmax,cmap,outname=Non
     if outname is None:
         outname = "animation"
     mov.save(
-        "/scratch/gb02/ab4502/temp_figs/"+outname+".mp4",
+        "/scratch/ng72/ab4502/temp_figs/"+outname+".mp4",
         overwrite_existing=True,
         parallel=True,
         progress=True,
@@ -407,30 +427,30 @@ def radar_animation(rid,times,field,z):
         cmap="RdBu",
         outname=rid+"_"+field+"_"+str(z)+"_"+times[0].strftime("%Y%m%d%H")+"_"+times[1].strftime("%Y%m%d%H")) 
     
-    [os.remove(f) for f in glob.glob("/scratch/gb02/ab4502/radar/"+rid+"*_grid.nc")];
+    [os.remove(f) for f in glob.glob("/scratch/ng72/ab4502/radar/"+rid+"*_grid.nc")];
 
 def barra_c_animation(lat_slice,lon_slice,time_slice):
 
     #Load data
     barra_c_F = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/F_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/F_201601010000_201601312300.nc",
             chunks="auto").F
     barra_c_Fc = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/Fc_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/Fc_201601010000_201601312300.nc",
             chunks="auto").Fc    
     barrac_fuzzy = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/fuzzy_mean_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/fuzzy_mean_201601010000_201601312300.nc",
             chunks="auto")["__xarray_dataarray_variable__"]   
     barra_c_fuzzy_mask = xr.open_dataset(
-        "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/filtered_mask_fuzzy_mean_201601010000_201601312300.nc",
+        "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/filtered_mask_fuzzy_mean_201601010000_201601312300.nc",
         chunks="auto")
     barra_c_F_mask = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/filtered_mask_F_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/filtered_mask_F_201601010000_201601312300.nc",
             chunks="auto")    
     barra_c_Fc_mask = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/filtered_mask_Fc_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/filtered_mask_Fc_201601010000_201601312300.nc",
             chunks="auto")    
-    angle_ds = xr.open_dataset('/g/data/gb02/ab4502/coastline_data/barra_c.nc')
+    angle_ds = xr.open_dataset('/g/data/ng72/ab4502/coastline_data/barra_c.nc')
 
     plot_ds = xr.Dataset(
             {"field1":barrac_fuzzy,
@@ -456,13 +476,13 @@ def barra_r_animation(lat_slice,lon_slice,time_slice):
 
     #Load data
     barra_r_hourly = xr.open_dataset(
-        "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/F_hourly_201601010000_201601312300.nc",
+        "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/F_hourly_201601010000_201601312300.nc",
         chunks="auto")
     barra_r_F = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/F_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/F_201601010000_201601312300.nc",
             chunks="auto").F
     barra_r_Fc = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/Fc_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/Fc_201601010000_201601312300.nc",
             chunks="auto").Fc    
     barrar_fuzzy = sea_breeze_funcs.fuzzy_function_combine(
         barra_r_hourly.wind_change,
@@ -470,15 +490,15 @@ def barra_r_animation(lat_slice,lon_slice,time_slice):
         barra_r_hourly.t_change,
         combine_method="mean")
     barra_r_fuzzy_mask = xr.open_dataset(
-        "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/filtered_mask_fuzzy_mean_201601010000_201601312300.nc",
+        "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/filtered_mask_fuzzy_mean_201601010000_201601312300.nc",
         chunks="auto")
     barra_r_F_mask = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/filtered_mask_F_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/filtered_mask_F_201601010000_201601312300.nc",
             chunks="auto")    
     barra_r_Fc_mask = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/filtered_mask_Fc_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/filtered_mask_Fc_201601010000_201601312300.nc",
             chunks="auto")    
-    angle_ds = xr.open_dataset('/g/data/gb02/ab4502/coastline_data/barra_r.nc')
+    angle_ds = xr.open_dataset('/g/data/ng72/ab4502/coastline_data/barra_r.nc')
 
     plot_ds = xr.Dataset(
             {"field1":barrar_fuzzy,
@@ -503,85 +523,84 @@ def barra_r_animation(lat_slice,lon_slice,time_slice):
 def aus2200_animation(lat_slice,lon_slice,time_slice):
 
     #Load funcs
-    # aus2200_F = xr.open_dataset(
-    #         "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/F_mjo-elnino_201601010000_201601312300.nc",
-    #         chunks="auto").F
-    # aus2200_Fc = xr.open_dataset(
-    #         "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/Fc_mjo-elnino_201601010000_201601312300.nc",
-    #         chunks="auto").Fc    
-    # aus2200_sbi = xr.open_dataset(
-    #         "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/sbi_mjo-elnino_201601010100_201601312300.nc",
-    #         chunks="auto").sbi
-    # aus2200_fuzzy = xr.open_dataset(
-    #         "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/fuzzy_mjo-elnino_201601010000_201601312300.nc",
-    #         chunks="auto")["__xarray_dataarray_variable__"]
+    aus2200_F = xr.open_dataset(
+            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/F_mjo-elnino_201601010000_201601312300.zarr",
+            chunks={}).F
     aus2200_Fc = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/Fc_mjo-elnino_201601010000_201601312300.zarr",
-            chunks="auto").Fc   
-    aus2200_Fc_smooth = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/aus2200_smooth_s2/Fc_mjo-elnino_201601010000_201601312300.zarr",
-            chunks="auto").Fc    
+            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/Fc_mjo-elnino_201601010000_201601312300.zarr",
+            chunks={}).Fc    
+    aus2200_sbi = xr.open_dataset(
+            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/sbi_mjo-elnino_201601010100_201601312300.zarr",
+            chunks={}).sbi
+    aus2200_fuzzy = xr.open_dataset(
+            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/fuzzy_mjo-elnino_201601010000_201601312300.zarr",
+            chunks={})["__xarray_dataarray_variable__"]
+    # aus2200_Fc = xr.open_dataset(
+    #         "/g/data/ng72/ab4502/sea_breeze_detection/aus2200/Fc_mjo-elnino_201601010000_201601312300.zarr",
+    #         chunks="auto").Fc   
+    # aus2200_Fc_smooth = xr.open_dataset(
+    #         "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s2/Fc_mjo-elnino_201601010000_201601312300.zarr",
+    #         chunks="auto").Fc    
 
     #Load masks
-    # aus2200_fuzzy_mask = xr.open_dataset(
-    #     "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/filtered_mask_fuzzy_mean_201601010000_201601312300.nc",
-    #     chunks="auto")
-    # aus2200_F_mask = xr.open_dataset(
-    #     "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/filtered_mask_F_201601010000_201601312300.nc",
-    #     chunks="auto")
-    # aus2200_Fc_mask = xr.open_dataset(
-    #     "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/filtered_mask_Fc_201601010000_201601312300.nc",
-    #     chunks="auto")
-    # aus2200_sbi_mask = xr.open_dataset(
-    #     "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/filtered_mask_sbi_201601010000_201601312300.nc",
-    #     chunks="auto")
+    aus2200_fuzzy_mask = xr.open_dataset(
+        "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_fuzzy_201601060000_201601122300.zarr",
+        chunks={})
+    aus2200_F_mask = xr.open_dataset(
+        "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_F_201601060000_201601122300.zarr",
+        chunks={})
     aus2200_Fc_mask = xr.open_dataset(
-        "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/filtered_mask_Fc_201601010000_201601312300.zarr",
-        chunks="auto")
-    aus2200_Fc_mask_smooth = xr.open_dataset(
-        "/g/data/gb02/ab4502/sea_breeze_detection/aus2200_smooth_s2/filtered_mask_Fc_201601010000_201601312300.zarr",
-        chunks="auto")
+        "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_Fc_201601060000_201601122300.zarr",
+        chunks={})
+    aus2200_sbi_mask = xr.open_dataset(
+        "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_sbi_201601060000_201601122300.zarr",
+        chunks={})
+    # aus2200_Fc_mask = xr.open_dataset(
+    #     "/g/data/ng72/ab4502/sea_breeze_detection/aus2200/filtered_mask_Fc_201601010000_201601312300.zarr",
+    #     chunks="auto")
+    # aus2200_Fc_mask_smooth = xr.open_dataset(
+    #     "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s2/filtered_mask_Fc_201601010000_201601312300.zarr",
+    #     chunks="auto")
 
 
-    angle_ds = xr.open_dataset('/g/data/gb02/ab4502/coastline_data/aus2200.nc')
+    angle_ds = xr.open_dataset('/g/data/ng72/ab4502/coastline_data/aus2200.nc')
 
+    plot_ds = xr.Dataset(
+            {"field1":aus2200_fuzzy,
+            "mask1":(aus2200_fuzzy_mask.all_labels >= 1),
+            "filtered_mask1":aus2200_fuzzy_mask.mask,
+            "field2":aus2200_Fc,
+            "mask2":(aus2200_Fc_mask.all_labels >= 1),
+            "filtered_mask2":aus2200_Fc_mask.mask,
+            "field3":aus2200_F,
+            "mask3":(aus2200_F_mask.all_labels >= 1),
+            "filtered_mask3":aus2200_F_mask.mask,
+            "field4":aus2200_sbi,
+            "mask4":(aus2200_sbi_mask.all_labels >= 1),
+            "filtered_mask4":aus2200_sbi_mask.mask,
+            "variance_interp":angle_ds["variance_interp"]
+             }
+             ).sel(lat=lat_slice,lon=lon_slice,time=time_slice).chunk({"time":1,"lat":-1,"lon":-1})#.persist()
     # plot_ds = xr.Dataset(
-    #         {"field1":aus2200_fuzzy,
-    #         "mask1":(aus2200_fuzzy_mask.all_labels >= 1),
-    #         "filtered_mask1":aus2200_fuzzy_mask.mask,
-    #         "field2":aus2200_Fc,
-    #         "mask2":(aus2200_Fc_mask.all_labels >= 1),
-    #         "filtered_mask2":aus2200_Fc_mask.mask,
-    #         "field3":aus2200_F,
-    #         "mask3":(aus2200_F_mask.all_labels >= 1),
-    #         "filtered_mask3":aus2200_F_mask.mask,
-    #         "field4":aus2200_sbi,
-    #         "mask4":(aus2200_sbi_mask.all_labels >= 1),
-    #         "filtered_mask4":aus2200_sbi_mask.mask,
+    #         {
+    #         "field1":aus2200_Fc_smooth,
+    #         "mask1":(aus2200_Fc_mask_smooth.all_labels >= 1),
+    #         "filtered_mask1":aus2200_Fc_mask_smooth.mask,
     #         "variance_interp":angle_ds["variance_interp"]
     #          }
     #          ).sel(lat=lat_slice,lon=lon_slice,time=time_slice).chunk({"time":1,"lat":-1,"lon":-1}).persist()
-    plot_ds = xr.Dataset(
-            {"field1":aus2200_Fc,
-            "mask1":(aus2200_Fc_mask.all_labels >= 1),
-            "filtered_mask1":aus2200_Fc_mask.mask,
-            "field2":aus2200_Fc_smooth,
-            "mask2":(aus2200_Fc_mask_smooth.all_labels >= 1),
-            "filtered_mask2":aus2200_Fc_mask_smooth.mask,
-            "variance_interp":angle_ds["variance_interp"]
-             }
-             ).sel(lat=lat_slice,lon=lon_slice,time=time_slice).chunk({"time":1,"lat":-1,"lon":-1}).persist()
 
-    # xmovie_animation_plotmasks_4fields(
-    #     plot_ds,
-    #     vmins=[0,-200,-200,0],
-    #     vmaxs=[0.5,200,200,1],
-    #     field_titles=["Fuzzy function","Coast F","F","sbi"])
-    xmovie_animation_plotmasks_2fields(
+    xmovie_animation_plotmasks_4fields(
         plot_ds,
-        vmins=[-200,-50],
-        vmaxs=[200,50],
-        field_titles=["Fc","Fc_smooth"])
+        vmins=[0,-50,-50,0],
+        vmaxs=[0.5,50,50,1],
+        field_titles=["Fuzzy function","Coast F","F","sbi"])
+    # xmovie_animation_plotmasks_1fields(
+    #     plot_ds,
+    #     vmins=[-50],
+    #     vmaxs=[50],
+    #     field_titles=["Fc_smoothed"],
+    #     cmap="RdBu")
     
 def compare_models_animation(lat_slice,lon_slice,time_slice,outname=None):
 
@@ -589,38 +608,38 @@ def compare_models_animation(lat_slice,lon_slice,time_slice,outname=None):
 
     #Load funcs AUS2200
     aus2200_F = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/F_mjo-elnino_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200/F_mjo-elnino_201601010000_201601312300.nc",
             chunks=chunks).F
     aus2200_Fc = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/Fc_mjo-elnino_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200/Fc_mjo-elnino_201601010000_201601312300.nc",
             chunks=chunks).Fc    
     aus2200_sbi = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/sbi_mjo-elnino_201601010100_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200/sbi_mjo-elnino_201601010100_201601312300.nc",
             chunks=chunks).sbi
     aus2200_fuzzy = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/aus2200/fuzzy_mjo-elnino_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200/fuzzy_mjo-elnino_201601010000_201601312300.nc",
             chunks=chunks)["__xarray_dataarray_variable__"]
 
     #Load funcs BARRA-C
     barra_c_F = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/F_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/F_201601010000_201601312300.nc",
             chunks=chunks).F
     barra_c_Fc = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/Fc_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/Fc_201601010000_201601312300.nc",
             chunks=chunks).Fc    
     barra_c_fuzzy = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_c/fuzzy_mean_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_c/fuzzy_mean_201601010000_201601312300.nc",
             chunks=chunks)["__xarray_dataarray_variable__"]    
     
     #Load funcs BARRA-R
     barra_r_F = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/F_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/F_201601010000_201601312300.nc",
             chunks=chunks).F
     barra_r_Fc = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/Fc_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/Fc_201601010000_201601312300.nc",
             chunks=chunks).Fc    
     barra_r_hourly = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/barra_r/F_hourly_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/barra_r/F_hourly_201601010000_201601312300.nc",
             chunks=chunks)
     barra_r_fuzzy = sea_breeze_funcs.fuzzy_function_combine(
         barra_r_hourly.wind_change,
@@ -630,16 +649,16 @@ def compare_models_animation(lat_slice,lon_slice,time_slice,outname=None):
     
     #Load funcs ERA5
     era5_F = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/era5/F_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/era5/F_201601010000_201601312300.nc",
             chunks=chunks).F
     era5_Fc = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/era5/Fc_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/era5/Fc_201601010000_201601312300.nc",
             chunks=chunks).Fc    
     era5_sbi = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/era5/sbi_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/era5/sbi_201601010000_201601312300.nc",
             chunks=chunks).sbi    
     era5_hourly = xr.open_dataset(
-            "/g/data/gb02/ab4502/sea_breeze_detection/era5/F_hourly_201601010000_201601312300.nc",
+            "/g/data/ng72/ab4502/sea_breeze_detection/era5/F_hourly_201601010000_201601312300.nc",
             chunks=chunks)
     era5_fuzzy = sea_breeze_funcs.fuzzy_function_combine(
         era5_hourly.wind_change,
@@ -705,6 +724,7 @@ if __name__ == "__main__":
 
     #Lat/lon/time bounds
     
+    #lat_slice, lon_slice = utils.get_perth_large_bounds()
     lat_slice, lon_slice = utils.get_darwin_large_bounds()
     time_slice = slice("2016-01-06 00:00","2016-01-12 23:00")
 

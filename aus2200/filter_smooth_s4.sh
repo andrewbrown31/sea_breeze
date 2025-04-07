@@ -7,11 +7,11 @@
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth_s4_filter.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth_s4_filter.e
-#PBS -l storage=gdata/gb02+gdata/hh5+gdata/ua8
+#PBS -l storage=gdata/gb02+gdata/hh5+gdata/ua8+gdata/ng72
  
 #Set up conda/shell environments 
 module use /g/data/hh5/public/modules
 module load conda/analysis3
 module load dask-optimiser
 
-python /home/548/ab4502/working/sea_breeze/aus2200/filter.py --model aus2200_smooth_s4
+python /home/548/ab4502/working/sea_breeze/aus2200/filter.py --model aus2200_smooth_s4 --filter_name no_hourly_change
