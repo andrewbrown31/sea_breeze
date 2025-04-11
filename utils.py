@@ -3,6 +3,47 @@ import metpy.calc as mpcalc
 import xarray as xr
 import xesmf as xe
 import skimage
+import glob
+
+def load_diagnostics(field,model):
+
+    """
+    Load the sea breeze diagnostics from the specified model and field.
+    Args:
+        field (str): The field to load. Options are "F", "Fc", "sbi", "fuzzy", "F_hourly"
+        model (str): The model to load. Options are "era5", "barra_r", "barra_c_smooth_s2", "aus2200_smooth_s4".
+    Returns:
+        xr.DataArray: The loaded data.
+    """
+
+    path = "/g/data/ng72/ab4502/sea_breeze_detection"
+
+    # Construct the file path and open the dataset. If the field is "fuzzy", use there should be only one file
+    if field == "fuzzy":
+        ds = xr.open_dataset(f"{path}/{model}/fuzzy_201301010000_201802282300.zarr",engine="zarr",chunks={})
+    else:
+        #If the field is not "fuzzy", we need to open multiple files. Get the file names using glob
+        # and open them using xarray
+        if model == "aus2200_smooth_s4":
+            fn1 = glob.glob(f"{path}/{model}/{field}_mjo-neutral2013_20130101??00_201301312300.zarr")[0]
+            fn2 = glob.glob(f"{path}/{model}/{field}_mjo-neutral2013_20130201??00_201302282300.zarr")[0]
+            fn3 = glob.glob(f"{path}/{model}/{field}_mjo-elnino2016_20160101??00_201601312300.zarr")[0]
+            fn4 = glob.glob(f"{path}/{model}/{field}_mjo-elnino2016_20160201??00_201602292300.zarr")[0]
+            fn5 = glob.glob(f"{path}/{model}/{field}_mjo-lanina2018_20180101??00_201801312300.zarr")[0]
+            fn6 = glob.glob(f"{path}/{model}/{field}_mjo-lanina2018_20180201??00_201802282300.zarr")[0]
+        else:
+            fn1 = f"{path}/{model}/{field}_201301010000_201301312300.zarr"
+            fn2 = f"{path}/{model}/{field}_201302010000_201302282300.zarr"
+            fn3 = f"{path}/{model}/{field}_201601010000_201601312300.zarr"
+            fn4 = f"{path}/{model}/{field}_201602010000_201602292300.zarr"
+            fn5 = f"{path}/{model}/{field}_201801010000_201801312300.zarr"
+            fn6 = f"{path}/{model}/{field}_201802010000_201802282300.zarr"
+        
+        ds = xr.open_mfdataset(
+            [fn1,fn2,fn3,fn4,fn5,fn6],
+            engine="zarr")
+
+    return ds   
 
 def metpy_grid_area(lon,lat):
     """

@@ -8,12 +8,12 @@ if __name__ == "__main__":
     client = Client()
 
     #Set up paths to sea_breeze_funcs data output and other inputs
-    path = "/g/data/gb02/ab4502/"
-    hourly_change_path = path+ "sea_breeze_detection/barra_r/F_hourly_201601010000_201601312300.nc"
+    path = "/g/data/ng72/ab4502/"
+    hourly_change_path = path+ "sea_breeze_detection/barra_r/F_hourly_*.zarr"
 
     #Load the hourly change dataset
-    hourly_change_ds = xr.open_dataset(
-        hourly_change_path, chunks={"time":1,"lat":-1,"lon":-1}
+    hourly_change_ds = xr.open_mfdataset(
+        hourly_change_path, engine="zarr"
         )
     
     #Combine the fuzzy functions
@@ -24,4 +24,4 @@ if __name__ == "__main__":
         combine_method="mean")    
     
     #Save
-    fuzzy.to_netcdf(path + "sea_breeze_detection/barra_r/fuzzy_mean_201601010000_201601312300.nc")
+    fuzzy.chunk({"time":744}).to_zarr(path + "sea_breeze_detection/barra_r/fuzzy_mean_201301010000_201802282300.zarr",mode="w")

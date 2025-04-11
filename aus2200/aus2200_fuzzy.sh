@@ -1,13 +1,13 @@
 #!/bin/bash
 
-#PBS -P gb02 
-#PBS -q normal
-#PBS -l walltime=01:00:00,mem=190GB 
+#PBS -P ng72 
+#PBS -q hugemem
+#PBS -l walltime=01:00:00,mem=512GB 
 #PBS -l ncpus=48
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_fuzzy.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_fuzzy.e
-#PBS -l storage=gdata/gb02+gdata/hh5+gdata/ua8
+#PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8
  
 #Set up conda/shell environments 
 module use /g/data/hh5/public/modules

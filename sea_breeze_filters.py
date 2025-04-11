@@ -11,6 +11,7 @@ import dask.array as da
 from sea_breeze import utils
 import os
 from dask.distributed import progress
+import logging
 
 class Mask_Options:
     
@@ -186,6 +187,9 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
 
     if ds.mask.ndim > 2:
         raise ValueError("mask must be a 2D array (of lat and lon). If you have a time dimension, use map_blocks to process each time slice. See process_time_slice function or filter_ds_driver")
+
+    #Set up logging
+    logging.getLogger("flox").setLevel(logging.WARNING)
 
     #Set options
     mask_options = Mask_Options().set_options(kwargs)
