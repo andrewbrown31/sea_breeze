@@ -305,7 +305,7 @@ def load_barra_static(domain_id,lon_slice,lat_slice):
     orog = data_catalog.search(variable_id="orog",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
     lsm = data_catalog.search(variable_id="sftlf",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
 
-    return orog.orog, (lsm.sftlf >= 0.5) * 1
+    return orog.orog, (lsm.sftlf >= 50) * 1
 
 def barra_sfc_moisture(huss,ps,tas):
 

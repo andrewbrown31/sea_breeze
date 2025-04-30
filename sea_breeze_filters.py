@@ -207,6 +207,7 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
 
     #Get longitudes of image for the purpose of converting to local solar time
     lons = ds.lon.values
+    lats = ds.lat.values
 
     #Get area of pixels using metpy
     dx,dy,pixel_area = utils.metpy_grid_area(ds.lon,ds.lat)
@@ -220,6 +221,7 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
     major = np.array([region_props[i].axis_major_length for i in np.arange(len(region_props))])                       #Major axis length in pixels
     minor = np.array([region_props[i].axis_minor_length for i in np.arange(len(region_props))])                       #Minor axis length in pixels
     centroid_lons = [lons[np.round(region_props[i].centroid[1]).astype(int)] for i in np.arange(len(region_props))]  
+    centroid_lats = [lats[np.round(region_props[i].centroid[0]).astype(int)] for i in np.arange(len(region_props))]  
     lst = [pd.to_datetime(time) + dt.timedelta(hours=l / 180 * 12) for l in centroid_lons]                            #Local solar time based on centroid longitude
 
     #Create pandas dataframe with object properties, index by label number
@@ -229,6 +231,8 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
         "orient":orient,
         "major":major,
         "minor":minor,
+        "lon_centroid":centroid_lons,
+        "lat_centroid":centroid_lats,
         "lst":pd.to_datetime(lst)}, index=labs)        
     props_df["aspect"] = props_df.major/props_df.minor
     
