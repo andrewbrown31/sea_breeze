@@ -1,13 +1,13 @@
 #!/bin/bash
 
-#PBS -P gb02 
+#PBS -P ng72 
 #PBS -q hugemem
-#PBS -l walltime=12:00:00,mem=1470GB 
+#PBS -l walltime=12:00:00,mem=512GB 
 #PBS -l ncpus=48
 #PBS -l jobfs=32gb
-#PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth_s4_filter.o 
-#PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth_s4_filter.e
-#PBS -l storage=gdata/gb02+gdata/hh5+gdata/ua8+gdata/ng72
+#PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth_s4_filter_Fc.o 
+#PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth_s4_filter_Fc.e
+#PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8+gdata/ng72+gdata/bs94
  
 #Set up conda/shell environments 
 module use /g/data/hh5/public/modules
@@ -18,9 +18,10 @@ module load dask-optimiser
 fc_threshold="15.241098"
 f_threshold="18.796545"	
 fuzzy_threshold="0.286726"
+sbi_threshold="0.2730420"
 
 #Set the start and end dates, and the current date as the start date
-start_date="2013-01-01"
+start_date="2016-02-01"
 end_date="2018-02-28"
 current_date="$start_date 00:00:00"
 
@@ -53,7 +54,15 @@ while [[ "$current_date" < "$end_date" ]]; do
         if [[ "$current_date" == *"2013"* || "$current_date" == *"2016"* || "$current_date" == *"2018"* ]]; then
 
             #Print the date interval
-            echo "$start_time" "$end_time" 
+            echo "Start time: " "$start_time" "End time: " "$end_time" 
+
+            #If the start time is the first day of the month, then set the start time hour as 01:00
+            #Otherwise, set the start time hour as 00:00
+            if [[ "$(date -d "$current_date" +"%d")" == "01" ]]; then
+                sbi_start_time=$(date -d "$start_time" +"%Y-%m-01 01:00")
+            else
+                sbi_start_time=$(date -d "$start_time" +"%Y-%m-01 00:00")
+            fi
 
             #Run the filter script for each field with the specified parameters
             if [[ "$current_date" == *"2013"* ]]; then
@@ -64,17 +73,17 @@ while [[ "$current_date" < "$end_date" ]]; do
                 exp_id="mjo-lanina2018"
             fi
 
-            #Fc     
+            # #Fc     
             python /home/548/ab4502/working/sea_breeze/filter.py --model aus2200_smooth_s4 --filter_name no_hourly_change --field_name Fc --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $fc_threshold --exp_id $exp_id
 
-            #F
-            python /home/548/ab4502/working/sea_breeze/filter.py --model aus2200_smooth_s4 --filter_name no_hourly_change --field_name F --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $f_threshold --exp_id $exp_id
+            # #F
+            # python /home/548/ab4502/working/sea_breeze/filter.py --model aus2200_smooth_s4 --filter_name no_hourly_change --field_name F --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $f_threshold --exp_id $exp_id
 
-            #Fuzzy
-            python /home/548/ab4502/working/sea_breeze/filter.py --model aus2200_smooth_s4 --filter_name no_hourly_change --field_name fuzzy --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $fuzzy_threshold --exp_id $exp_id
+            # #Fuzzy
+            # python /home/548/ab4502/working/sea_breeze/filter.py --model aus2200_smooth_s4 --filter_name no_hourly_change --field_name fuzzy --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $fuzzy_threshold --exp_id $exp_id
 
             #sbi
-            python /home/548/ab4502/working/sea_breeze/filter.py --model aus2200_smooth_s4 --filter_name no_hourly_change --field_name sbi --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $fuzzy_threshold --exp_id $exp_id
+            #python /home/548/ab4502/working/sea_breeze/filter.py --model aus2200_smooth_s4 --filter_name no_hourly_change --field_name sbi --t1 "$sbi_start_time" --t2 "$end_time" --threshold fixed --threshold_value $sbi_threshold --exp_id $exp_id
 
         fi
     fi

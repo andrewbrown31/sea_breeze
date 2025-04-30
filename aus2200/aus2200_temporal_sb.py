@@ -156,4 +156,8 @@ if __name__ == "__main__":
 
     F_hourly_save = F_hourly.to_zarr(out_path+F_hourly_fname,compute=False,mode="w")
     progress(F_hourly_save.persist())    
+
+    #Close the dask client
+    client.close()
+    print("INFO: Finished")
     

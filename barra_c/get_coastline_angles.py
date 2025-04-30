@@ -17,4 +17,6 @@ if __name__ == "__main__":
         compute=True,
         latlon_chunk_size=10,
         save=True,
-        path_to_save="/g/data/gb02/ab4502/coastline_data/barra_c.nc")
+        path_to_save="/g/data/ng72/ab4502/coastline_data/barra_c.nc")
+    
+    client.close()

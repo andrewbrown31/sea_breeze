@@ -33,4 +33,4 @@ if __name__ == "__main__":
         combine_method="mean")    
     
     #Save
-    fuzzy.chunk({"time":744}).to_zarr(path + "sea_breeze_detection/"+model+"/fuzzy_mean_201301010000_201802282300.zarr",mode="w")
+    fuzzy.chunk({"time":744}).to_zarr(path + "sea_breeze_detection/"+model+"/fuzzy_201301010000_201802282300.zarr",mode="w")

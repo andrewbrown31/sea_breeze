@@ -20,7 +20,7 @@ def load_diagnostics(field,model):
 
     # Construct the file path and open the dataset. If the field is "fuzzy", use there should be only one file
     if field == "fuzzy":
-        ds = xr.open_dataset(f"{path}/{model}/fuzzy_201301010000_201802282300.zarr",engine="zarr",chunks={})
+        ds = xr.open_dataset(f"{path}/{model}/fuzzy_201301010000_201802282300.zarr",engine="zarr",chunks={})["__xarray_dataarray_variable__"]
     else:
         #If the field is not "fuzzy", we need to open multiple files. Get the file names using glob
         # and open them using xarray
@@ -41,7 +41,7 @@ def load_diagnostics(field,model):
         
         ds = xr.open_mfdataset(
             [fn1,fn2,fn3,fn4,fn5,fn6],
-            engine="zarr")
+            engine="zarr")[field]
 
     return ds   
 
@@ -106,7 +106,12 @@ def get_weipa_bounds():
     """
     lat_slice = slice(-13.8059830440922, -11.1080169559078)
     lon_slice = slice(129.543506224276, 132.306493775724)
-    return lat_slice, lon_slice    
+    return lat_slice, lon_slice   
+
+def get_gippsland_bounds():
+    lat_slice = slice(-39.5, -36.5)
+    lon_slice = slice(146, 149)
+    return lat_slice, lon_slice 
 
 def regrid(da,new_lon,new_lat):
     """

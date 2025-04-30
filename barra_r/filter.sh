@@ -7,17 +7,18 @@
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/barra_r_filter.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/barra_r_filter.e
-#PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8+gdata/rt52+gdata/ob53
+#PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8+gdata/rt52+gdata/ob53+gdata/xp65
  
 #Set up conda/shell environments 
+module use /g/data/xp65/public/modules
+module load conda/analysis3-24.07
 module use /g/data/hh5/public/modules
-module load conda/analysis3
 module load dask-optimiser
 
 #Threshold settings for BARRA-R
-fc_threshold="11.847323"
+#fc_threshold="11.847323"
 f_threshold="12.682425"	
-fuzzy_threshold="0.256632"
+fuzzy_threshold="0.256120"
 
 #Set the start and end dates, and the current date as the start date
 start_date="2013-01-01"
@@ -58,7 +59,7 @@ while [[ "$current_date" < "$end_date" ]]; do
             #Run the filter script for each field with the specified parameters
 
             #Fc     
-            python /home/548/ab4502/working/sea_breeze/filter.py --model barra_r --filter_name no_hourly_change --field_name Fc --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $fc_threshold
+            #python /home/548/ab4502/working/sea_breeze/filter.py --model barra_r --filter_name no_hourly_change --field_name Fc --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value #$fc_threshold
 
             #F
             python /home/548/ab4502/working/sea_breeze/filter.py --model barra_r --filter_name no_hourly_change --field_name F --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $f_threshold

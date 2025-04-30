@@ -314,11 +314,16 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
     if "height" in list(dqu_dt.coords.keys()):        
         dqu_dt = dqu_dt.drop_vars("height")     
 
+#    ds = xr.Dataset(
+#        {"wind_change":wind_change,
+#         "q_change":q_change,
+#         "t_change":t_change,
+#         "dqu_dt":dqu_dt
+#            }).persist()
     ds = xr.Dataset(
         {"wind_change":wind_change,
          "q_change":q_change,
          "t_change":t_change,
-         "dqu_dt":dqu_dt
             }).persist()
     ds["wind_change"] = ds["wind_change"].assign_attrs(
         units = "m/s/h",
@@ -332,10 +337,10 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
         units = "g/kg/h",
         long_name = "Local specific humidity rate of change.",
         description = "Rate of change of specific humidity.")
-    ds["dqu_dt"] = ds["dqu_dt"].assign_attrs(
-        units = "g/kg/m/(s^2)",
-        long_name = "Moisture flux rate of change",
-        description = "Rate of change of onshore moisture flux gradient (dqu/dt).")    
+    # ds["dqu_dt"] = ds["dqu_dt"].assign_attrs(
+    #     units = "g/kg/m/(s^2)",
+    #     long_name = "Moisture flux rate of change",
+    #     description = "Rate of change of onshore moisture flux gradient (dqu/dt).")    
     
     return ds
 

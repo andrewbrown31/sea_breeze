@@ -89,12 +89,12 @@ if __name__ == "__main__":
     )
 
     #Calc coast-relative 2d kinematic moisture frontogenesis
-    Fc = sea_breeze_funcs.coast_relative_frontogenesis(
-        huss,
-        uas,
-        vas,
-        angle_ds["angle_interp"]
-    )
+    # Fc = sea_breeze_funcs.coast_relative_frontogenesis(
+    #     huss,
+    #     uas,
+    #     vas,
+    #     angle_ds["angle_interp"]
+    # )
 
     #Setup out paths
     out_path = "/g/data/ng72/ab4502/sea_breeze_detection/"+args.model+"/"
@@ -111,6 +111,6 @@ if __name__ == "__main__":
     print("INFO: Computing frontogenesis...")
     F_save = F.to_zarr(out_path+F_fname,compute=False,mode="w")
     progress(F_save.persist())
-    print("INFO: Computing coast-relative frontogenesis...")
-    Fc_save = Fc.to_zarr(out_path+Fc_fname,compute=False,mode="w")
-    progress(Fc_save.persist())
+    # print("INFO: Computing coast-relative frontogenesis...")
+    # Fc_save = Fc.to_zarr(out_path+Fc_fname,compute=False,mode="w")
+    # progress(Fc_save.persist())

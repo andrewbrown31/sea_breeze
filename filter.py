@@ -216,7 +216,7 @@ if __name__ == "__main__":
         "temperature_change_filter":False,
         "humidity_change_filter":False,
         "wind_change_filter":False,
-        "propagation_speed_filter":True,
+        "propagation_speed_filter":False,
         "dist_to_coast_filter":False,
         "output_land_sea_temperature_diff":False,        
         "time_filter":False,
@@ -228,14 +228,17 @@ if __name__ == "__main__":
         }
 
     #Load sea breeze diagnostics
-    if field_name == "fuzzy":
-        field = load_diagnostics(field_name,model)["__xarray_dataarray_variable__"]\
-            .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
-                .chunk({"time":1,"lat":-1,"lon":-1})
-    else:
-        field = load_diagnostics(field_name,model)[field_name]\
-            .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
-                .chunk({"time":1,"lat":-1,"lon":-1})
+    # if field_name == "fuzzy":
+    #     field = load_diagnostics(field_name,model)["__xarray_dataarray_variable__"]\
+    #         .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
+    #             .chunk({"time":1,"lat":-1,"lon":-1})
+    # else:
+    #     field = load_diagnostics(field_name,model)[field_name]\
+    #         .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
+    #             .chunk({"time":1,"lat":-1,"lon":-1})
+    field = load_diagnostics(field_name,model)\
+        .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
+            .chunk({"time":1,"lat":-1,"lon":-1})
 
     #Load other datasets that can be used for additional filtering
     if "era5" in model:

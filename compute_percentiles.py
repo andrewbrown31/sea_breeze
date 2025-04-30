@@ -10,9 +10,11 @@ if __name__ == "__main__":
     client = Client()
 
     # Set up the parameters
-    fields = ["F","Fc","sbi","fuzzy"]
+    #fields = ["F","Fc","sbi","fuzzy"]
+    fields = ["F","sbi","fuzzy"]
     p = 99.5
-    models = ["era5","barra_r","barra_c_smooth_s2","aus2200_smooth_s4"]
+    #models = ["era5","barra_r","barra_c_smooth_s2","aus2200_smooth_s4"]
+    models = ["barra_r","barra_c_smooth_s2"]
 
     # Create a DataFrame to store the results
     vals_df = pd.DataFrame(index=models,columns=fields)
@@ -28,11 +30,11 @@ if __name__ == "__main__":
                 pass
             else:
                 # Load the data and calculate the percentile
-                da = load_diagnostics(field,model)[field]
+                da = load_diagnostics(field,model)
                 vals_df.at[model,field] = np.array(percentile(da,p))[0]
     
     # Save the results to a CSV file
-    vals_df.to_csv("/g/data/ng72/ab4502/sea_breeze_detection/percentiles/percentiles_"+str(p)+"_2013_2018.csv")
+    vals_df.to_csv("/g/data/ng72/ab4502/sea_breeze_detection/percentiles/percentiles_v2_"+str(p)+"_2013_2018.csv")
 
     # Close the Dask client
     client.close()
