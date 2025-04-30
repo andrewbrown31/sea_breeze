@@ -30,6 +30,8 @@ These functions convert the sea breeze diagnostics to a binary mask of candidate
 
 For processing the filtering, python scripts exist in each of the model directories (e.g. [`aus2200/filter.py`](aus2200/filter.py) applies filtering to AUS2200 data) as well bash scripts that submit those python scripts to the PBS queue (e.g. [`aus2200/filter.sh`](aus2200/filter.sh)). Again, for high-resolution data such as AUS2200 or BARRA-C, large amounts of memory may be required.
 
+For calculating the threshold to mask with, the [`compute_percentiles.py`](compute_percentiles.py) function can be used prior to the filtering. That way, the percentile threshold can be taken from a distribution over a longer period (say, several months) than the filtering period (say, a single day).
+
 ## Example 
 
 An example notebook demonstrating these three steps is available [here](example_notebooks/sea_breeze_detection_example.ipynb). It applies each of the diagnostics and the filter to a day of AUS2200 data.
