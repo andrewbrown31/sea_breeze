@@ -2,17 +2,20 @@
 
 #PBS -P ng72 
 #PBS -q normal
-#PBS -l walltime=00:30:00,mem=16GB 
+#PBS -l walltime=00:30:00,mem=32GB 
 #PBS -l ncpus=16
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/era5_temporal_sb.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/era5_temporal_sb.e
-#PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8+gdata/rt52
+#PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8+gdata/rt52+gdata/xp65+gdata/dk92
  
 #Set up conda/shell environments 
-module use /g/data/hh5/public/modules
-module load conda/analysis3
-module load dask-optimiser
+module use /g/data/xp65/public/modules
+module load conda/analysis3-24.07
+
+module use /g/data/dk92/apps/Modules/modulefiles
+module load gadi_jupyterlab/23.02
+jupyter.ini.sh -D
 
 python /home/548/ab4502/working/sea_breeze/era5/era5_temporal_sb.py "2013-01-01 00:00" "2013-01-31 23:00"
 python /home/548/ab4502/working/sea_breeze/era5/era5_temporal_sb.py "2013-02-01 00:00" "2013-02-28 23:00"

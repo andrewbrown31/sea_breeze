@@ -11,7 +11,7 @@ import scipy
 from dask.distributed import progress
 import pyproj
 import warnings
-from tqdm.dask import TqdmCallback
+import glob
 
 def interp_scipy(x, xp, fp):
     f = scipy.interpolate.interp1d(xp, fp, kind="linear", fill_value="extrapolate")
@@ -261,15 +261,30 @@ def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, ch
     smooth_axes: if smoothing, the axes to smooth over, as an iterable
     '''
 
-    data_catalog = get_intake_cat_barra()
+    if domain_id in ["AUST-04"]:
+        model = "BARRA-C2"
+    elif domain_id in ["AUST-11","AUS-11"]:
+        model = "BARRA-R2"
+    else:
+        raise ValueError("Invalid domain id")
+
+    #data_catalog = get_intake_cat_barra()
     times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
-    da = data_catalog.search(
-        variable_id=vname,
-        domain_id=domain_id,
-        freq=freq,
-        start_time=times)\
-            .to_dask(cdf_kwargs={"chunks":chunks}).\
+    files = [glob.glob("/g/data/ob53/BARRA2/output/reanalysis/"\
+                    +domain_id+"/BOM/ERA5/historical/hres/"+model+\
+                        "/v1/"+freq+"/"+vname+"/latest/"+\
+                            vname+"_"+domain_id+"_*_"+str(t)+"-*.nc") for t in times]
+    da = xr.open_mfdataset(
+        np.concatenate(files),
+        chunks=chunks).\
                 sel(lon=lon_slice, lat=lat_slice, time=slice(t1,t2))[vname]
+    #da = data_catalog.search(
+    #    variable_id=vname,
+    #    domain_id=domain_id,
+    #    freq=freq,
+    #    start_time=times)\
+    #        .to_dask(cdf_kwargs={"chunks":chunks}).\
+    #            sel(lon=lon_slice, lat=lat_slice, time=slice(t1,t2))[vname]
     
     #Optional smoothing
     da = da.assign_attrs({"smoothed":smooth})
@@ -301,9 +316,27 @@ def load_barra_static(domain_id,lon_slice,lat_slice):
     lon_slice: a slice to restrict lon domain
     '''
 
-    data_catalog = get_intake_cat_barra()
-    orog = data_catalog.search(variable_id="orog",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
-    lsm = data_catalog.search(variable_id="sftlf",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
+    # data_catalog = get_intake_cat_barra()
+    # orog = data_catalog.search(variable_id="orog",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
+    # lsm = data_catalog.search(variable_id="sftlf",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
+
+    if domain_id in ["AUST-04"]:
+        model = "BARRA-C2"
+    elif domain_id in ["AUST-11","AUS-11"]:
+        model = "BARRA-R2"
+    else:
+        raise ValueError("Invalid domain id")
+
+    orog_path = "/g/data/ob53/BARRA2/output/reanalysis/"\
+                    +domain_id+"/BOM/ERA5/historical/hres/"+model+\
+                        "/v1/fx/orog/latest/"+\
+                            "orog_*.nc"
+    lsm_path = "/g/data/ob53/BARRA2/output/reanalysis/"\
+                    +domain_id+"/BOM/ERA5/historical/hres/"+model+\
+                        "/v1/fx/sftlf/latest/"+\
+                            "sftlf*.nc"
+    orog = xr.open_mfdataset(orog_path).sel(lon=lon_slice, lat=lat_slice)
+    lsm = xr.open_mfdataset(lsm_path).sel(lon=lon_slice, lat=lat_slice)
 
     return orog.orog, (lsm.sftlf >= 50) * 1
 

@@ -1,5 +1,7 @@
 *.pyc
+.cfg*
 .ipynb_checkpoints/*
 */.ipynb_checkpoints/*
 */*/.ipynb_checkpoints/*
 **/*.ipynb_checkpoints/
+client_cmd

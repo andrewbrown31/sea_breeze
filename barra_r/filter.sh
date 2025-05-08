@@ -2,18 +2,26 @@
 
 #PBS -P ng72 
 #PBS -q normal
-#PBS -l walltime=06:00:00,mem=190GB 
+#PBS -l walltime=01:00:00,mem=190GB 
 #PBS -l ncpus=48
 #PBS -l jobfs=32gb
 #PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/barra_r_filter.o 
 #PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/barra_r_filter.e
-#PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8+gdata/rt52+gdata/ob53+gdata/xp65
+#PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8+gdata/rt52+gdata/ob53+gdata/xp65+gdata/dk92
  
 #Set up conda/shell environments 
+# module use /g/data/xp65/public/modules
+# module load conda/analysis3-24.07
+# module use /g/data/hh5/public/modules
+# module load dask-optimiser
+module use /g/data/dk92/apps/Modules/modulefiles
+module load gadi_jupyterlab/23.02
 module use /g/data/xp65/public/modules
-module load conda/analysis3-24.07
+module load conda/analysis3
 module use /g/data/hh5/public/modules
 module load dask-optimiser
+
+jupyter.ini.sh -D
 
 #Threshold settings for BARRA-R
 #fc_threshold="11.847323"
@@ -62,10 +70,10 @@ while [[ "$current_date" < "$end_date" ]]; do
             #python /home/548/ab4502/working/sea_breeze/filter.py --model barra_r --filter_name no_hourly_change --field_name Fc --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value #$fc_threshold
 
             #F
-            python /home/548/ab4502/working/sea_breeze/filter.py --model barra_r --filter_name no_hourly_change --field_name F --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $f_threshold
+            python /home/548/ab4502/working/sea_breeze/filter_test.py --model barra_r --filter_name no_hourly_change --field_name F --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $f_threshold
 
             #Fuzzy
-            python /home/548/ab4502/working/sea_breeze/filter.py --model barra_r --filter_name no_hourly_change --field_name fuzzy --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $fuzzy_threshold
+            python /home/548/ab4502/working/sea_breeze/filter_test.py --model barra_r --filter_name no_hourly_change --field_name fuzzy --t1 "$start_time" --t2 "$end_time" --threshold fixed --threshold_value $fuzzy_threshold
 
         fi
     fi

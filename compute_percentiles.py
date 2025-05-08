@@ -3,18 +3,20 @@ from dask.distributed import Client
 import pandas as pd
 import numpy as np
 from sea_breeze.utils import load_diagnostics
+import os
 
 if __name__ == "__main__":
 
     # Set up Dask client
-    client = Client()
+    #client = Client()
+    client = Client(scheduler_file=os.environ["DASK_PBS_SCHEDULER"])
 
     # Set up the parameters
     #fields = ["F","Fc","sbi","fuzzy"]
-    fields = ["F","sbi","fuzzy"]
+    fields = ["fuzzy"]
     p = 99.5
-    #models = ["era5","barra_r","barra_c_smooth_s2","aus2200_smooth_s4"]
-    models = ["barra_r","barra_c_smooth_s2"]
+    models = ["era5","barra_r","barra_c_smooth_s2","aus2200_smooth_s4"]
+    #models = ["aus2200_smooth_s2","aus2200_smooth_s6"]
 
     # Create a DataFrame to store the results
     vals_df = pd.DataFrame(index=models,columns=fields)
@@ -34,7 +36,7 @@ if __name__ == "__main__":
                 vals_df.at[model,field] = np.array(percentile(da,p))[0]
     
     # Save the results to a CSV file
-    vals_df.to_csv("/g/data/ng72/ab4502/sea_breeze_detection/percentiles/percentiles_v2_"+str(p)+"_2013_2018.csv")
+    vals_df.to_csv("/g/data/ng72/ab4502/sea_breeze_detection/percentiles/percentiles_fuzzy_"+str(p)+"_2013_2018.csv")
 
     # Close the Dask client
     client.close()

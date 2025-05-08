@@ -24,7 +24,7 @@ def load_diagnostics(field,model):
     else:
         #If the field is not "fuzzy", we need to open multiple files. Get the file names using glob
         # and open them using xarray
-        if model == "aus2200_smooth_s4":
+        if "aus2200" in model:
             fn1 = glob.glob(f"{path}/{model}/{field}_mjo-neutral2013_20130101??00_201301312300.zarr")[0]
             fn2 = glob.glob(f"{path}/{model}/{field}_mjo-neutral2013_20130201??00_201302282300.zarr")[0]
             fn3 = glob.glob(f"{path}/{model}/{field}_mjo-elnino2016_20160101??00_201601312300.zarr")[0]

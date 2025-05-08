@@ -1,4 +1,4 @@
-from sea_breeze import load_model_data, sea_breeze_funcs, sea_breeze_filters
+#from sea_breeze import load_model_data, sea_breeze_funcs, sea_breeze_filters
 from dask.distributed import Client
 from dask.distributed import progress
 import xarray as xr
@@ -26,7 +26,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     #Initiate distributed dask client on the Gadi HPC
-    client = Client()
+    #https://opus.nci.org.au/spaces/DAE/pages/155746540/Set+up+a+Dask+Cluster
+    #https://distributed.dask.org/en/latest/plugins.html#nanny-plugins
+    #client = Client()
+    client = Client(scheduler_file=os.environ["DASK_PBS_SCHEDULER"])
+    from distributed.diagnostics.plugin import UploadDirectory
+    client.register_plugin(UploadDirectory(
+        "/home/548/ab4502/working/sea_breeze"))  
+    from sea_breeze import load_model_data, sea_breeze_funcs
 
     #Set the domain bounds
     lat_slice=slice(args.lat1,args.lat2)

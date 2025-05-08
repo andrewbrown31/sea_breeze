@@ -23,7 +23,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     #Initiate distributed dask client on the Gadi HPC
-    client = Client()
+    client = Client(scheduler_file=os.environ["DASK_PBS_SCHEDULER"])
+    #client = Client()
 
     #Set the domain bounds
     lat_slice=slice(args.lat1,args.lat2)
@@ -90,8 +91,8 @@ if __name__ == "__main__":
         era5_uas,
         era5_vas,
         angle_ds["angle_interp"],
-        lat_chunk="auto",
-        lon_chunk="auto"
+        lat_chunk=1000,
+        lon_chunk=1000
     )    
 
     #Setup out paths

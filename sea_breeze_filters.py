@@ -510,21 +510,21 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
         pass
     else:
         ta=ta.chunk({"time":1,"lat":-1,"lon":-1})
-        ds = xr.merge((ds,ta.rename("ta")),join="exact")  
+        ds = xr.merge((ds,ta.rename("ta")),join="left")  
 
     #If vprime is provided, re-chunk in time and combine with the mask dataset
     if vprime is None:
         pass
     else:
         vprime = vprime.chunk({"time":1,"lat":-1,"lon":-1})
-        ds = xr.merge((ds,vprime.rename("vprime")),join="exact") 
+        ds = xr.merge((ds,vprime.rename("vprime")),join="left") 
 
     #Ifhourly change data is provided, re-chunk in time and combine with the mask dataset
     if hourly_change_ds is None:
         pass
     else:
         hourly_change_ds = hourly_change_ds.chunk({"time":1,"lat":-1,"lon":-1})
-        ds = xr.merge((ds,hourly_change_ds),join="exact")         
+        ds = xr.merge((ds,hourly_change_ds),join="left")         
 
     #We will apply the filtering using map_blocks.
     #First, need create a "template" from the first time step

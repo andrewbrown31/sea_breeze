@@ -2,6 +2,7 @@ import xarray as xr
 from sea_breeze import sea_breeze_funcs
 from dask.distributed import Client
 import argparse
+import os
 
 if __name__ == "__main__":
 
@@ -14,7 +15,8 @@ if __name__ == "__main__":
     model = args.model
 
     #Set up dask client
-    client = Client()
+    #client = Client()
+    client = Client(scheduler_file=os.environ["DASK_PBS_SCHEDULER"])
 
     #Set up paths to sea_breeze_funcs data output and other inputs
     path = "/g/data/ng72/ab4502/"

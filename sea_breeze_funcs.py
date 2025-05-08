@@ -302,17 +302,17 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
     uprime, vprime = rotate_wind(u,v,angle_da)
 
     #Calculate the rate of change
-    dqu_dt = (vprime*q).differentiate("time",datetime_unit="s")
-    wind_change = vprime.differentiate("time",datetime_unit="h")
-    q_change = q.differentiate("time",datetime_unit="h")
-    t_change = t.differentiate("time",datetime_unit="h")  
+    #dqu_dt = (vprime*q).differentiate("time",datetime_unit="s")
+    wind_change = vprime.diff("time")
+    q_change = q.diff("time")
+    t_change = t.diff("time")  
 
     if "height" in list(wind_change.coords.keys()):
         wind_change = wind_change.drop_vars("height")
     if "height" in list(wind_change.coords.keys()):        
         t_change = t_change.drop_vars("height")
-    if "height" in list(dqu_dt.coords.keys()):        
-        dqu_dt = dqu_dt.drop_vars("height")     
+    if "height" in list(q_change.coords.keys()):        
+        q_change = q_change.drop_vars("height")     
 
 #    ds = xr.Dataset(
 #        {"wind_change":wind_change,

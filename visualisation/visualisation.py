@@ -57,6 +57,25 @@ def animate_pcolormesh(datasets, figsize=(20,5), rows=None, cols=None, vmins=Non
     ani.save('/g/data/ng72/ab4502/figs/animations/' + fname + '.mp4', writer='ffmpeg', dpi=300)
     #plt.close()
 
+def plotmasks_3mask_only(ds,fig,tt,framedim,**kwargs):
+
+    ax1, ax2, ax3 = fig.subplots(1,3,subplot_kw={"projection":ccrs.PlateCarree()}).flatten()
+    ds["mask1"].isel({framedim:tt}).plot(ax=ax1,vmin=0,vmax=1,transform=ccrs.PlateCarree(),cmap="Blues")
+    ds["mask2"].isel({framedim:tt}).plot(ax=ax2,vmin=0,vmax=1,transform=ccrs.PlateCarree(),cmap="Blues")
+    ds["mask3"].isel({framedim:tt}).plot(ax=ax3,vmin=0,vmax=1,transform=ccrs.PlateCarree(),cmap="Blues")
+
+    for ax in [ax1, ax2, ax3]:
+        ax.coastlines()
+        # xr.plot.contourf(
+        #     ds["variance_interp"],ax=ax,levels=[0.,0.5],hatches=["","/////"],colors="none",add_colorbar=False)
+
+    fig.suptitle(ds.isel(time=tt).time.values)
+    fig.subplots_adjust(wspace=0.3)
+
+    plt.close(fig)
+    
+    return None, None
+
 def plotmasks_1fields(ds,fig,tt,framedim,vmins,vmaxs,field_titles,cmap,**kwargs):
 
     ax1, ax2, ax3 = fig.subplots(1,3,subplot_kw={"projection":ccrs.PlateCarree()}).flatten()
@@ -252,6 +271,22 @@ def plotmasks_4fields_only(ds,fig,tt,framedim,vmins,vmaxs,field_titles,**kwargs)
     plt.close(fig)
     
     return None, None   
+
+def xmovie_animation_plotmasks_3mask_only(ds):
+
+    mov = xmovie.Movie(
+        ds,
+        pixelwidth=3000,
+        pixelheight=1000,
+        plotfunc=plotmasks_3mask_only,
+        input_check=False,
+    )
+    mov.save(
+        "/scratch/ng72/ab4502/temp_figs/animation.mp4",
+        overwrite_existing=True,
+        parallel=True,
+        progress=True,
+        framerate=3)
 
 def xmovie_animation_plotmasks_1fields(ds,vmins,vmaxs,field_titles=["Field1","Field2"],cmap="viridis"):
 
@@ -523,18 +558,18 @@ def barra_r_animation(lat_slice,lon_slice,time_slice):
 def aus2200_animation(lat_slice,lon_slice,time_slice):
 
     #Load funcs
-    aus2200_F = xr.open_dataset(
-            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/F_mjo-elnino_201601010000_201601312300.zarr",
-            chunks={}).F
-    aus2200_Fc = xr.open_dataset(
-            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/Fc_mjo-elnino_201601010000_201601312300.zarr",
-            chunks={}).Fc    
-    aus2200_sbi = xr.open_dataset(
-            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/sbi_mjo-elnino_201601010100_201601312300.zarr",
-            chunks={}).sbi
-    aus2200_fuzzy = xr.open_dataset(
-            "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/fuzzy_mjo-elnino_201601010000_201601312300.zarr",
-            chunks={})["__xarray_dataarray_variable__"]
+    # aus2200_F = xr.open_dataset(
+    #         "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/F_mjo-elnino_201601010000_201601312300.zarr",
+    #         chunks={}).F
+    # aus2200_Fc = xr.open_dataset(
+    #         "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/Fc_mjo-elnino_201601010000_201601312300.zarr",
+    #         chunks={}).Fc    
+    # aus2200_sbi = xr.open_dataset(
+    #         "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/sbi_mjo-elnino_201601010100_201601312300.zarr",
+    #         chunks={}).sbi
+    # aus2200_fuzzy = xr.open_dataset(
+    #         "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/fuzzy_mjo-elnino_201601010000_201601312300.zarr",
+    #         chunks={})["__xarray_dataarray_variable__"]
     # aus2200_Fc = xr.open_dataset(
     #         "/g/data/ng72/ab4502/sea_breeze_detection/aus2200/Fc_mjo-elnino_201601010000_201601312300.zarr",
     #         chunks="auto").Fc   
@@ -543,18 +578,18 @@ def aus2200_animation(lat_slice,lon_slice,time_slice):
     #         chunks="auto").Fc    
 
     #Load masks
-    aus2200_fuzzy_mask = xr.open_dataset(
-        "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_fuzzy_201601060000_201601122300.zarr",
-        chunks={})
-    aus2200_F_mask = xr.open_dataset(
-        "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_F_201601060000_201601122300.zarr",
-        chunks={})
-    aus2200_Fc_mask = xr.open_dataset(
-        "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_Fc_201601060000_201601122300.zarr",
-        chunks={})
-    aus2200_sbi_mask = xr.open_dataset(
-        "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_sbi_201601060000_201601122300.zarr",
-        chunks={})
+    # aus2200_fuzzy_mask = xr.open_dataset(
+    #     "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_fuzzy_201601060000_201601122300.zarr",
+    #     chunks={})
+    # aus2200_F_mask = xr.open_dataset(
+    #     "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_F_201601060000_201601122300.zarr",
+    #     chunks={})
+    # aus2200_Fc_mask = xr.open_dataset(
+    #     "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_Fc_201601060000_201601122300.zarr",
+    #     chunks={})
+    # aus2200_sbi_mask = xr.open_dataset(
+    #     "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filtered_mask_no_hourly_change_sbi_201601060000_201601122300.zarr",
+    #     chunks={})
     # aus2200_Fc_mask = xr.open_dataset(
     #     "/g/data/ng72/ab4502/sea_breeze_detection/aus2200/filtered_mask_Fc_201601010000_201601312300.zarr",
     #     chunks="auto")
@@ -562,25 +597,17 @@ def aus2200_animation(lat_slice,lon_slice,time_slice):
     #     "/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s2/filtered_mask_Fc_201601010000_201601312300.zarr",
     #     chunks="auto")
 
+    aus2200_F = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filters/filtered_mask_no_hourly_change_F_2016*",engine="zarr",chunks={})
+    aus2200_fuzzy = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filters/filtered_mask_no_hourly_change_fuzzy_2016*",engine="zarr",chunks={})
+    aus2200_sbi = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filters/filtered_mask_no_hourly_change_sbi_2016*",engine="zarr",chunks={})
 
     angle_ds = xr.open_dataset('/g/data/ng72/ab4502/coastline_data/aus2200.nc')
 
-    plot_ds = xr.Dataset(
-            {"field1":aus2200_fuzzy,
-            "mask1":(aus2200_fuzzy_mask.all_labels >= 1),
-            "filtered_mask1":aus2200_fuzzy_mask.mask,
-            "field2":aus2200_Fc,
-            "mask2":(aus2200_Fc_mask.all_labels >= 1),
-            "filtered_mask2":aus2200_Fc_mask.mask,
-            "field3":aus2200_F,
-            "mask3":(aus2200_F_mask.all_labels >= 1),
-            "filtered_mask3":aus2200_F_mask.mask,
-            "field4":aus2200_sbi,
-            "mask4":(aus2200_sbi_mask.all_labels >= 1),
-            "filtered_mask4":aus2200_sbi_mask.mask,
-            "variance_interp":angle_ds["variance_interp"]
-             }
-             ).sel(lat=lat_slice,lon=lon_slice,time=time_slice).chunk({"time":1,"lat":-1,"lon":-1})#.persist()
+    plot_ds = xr.merge([
+        aus2200_F.mask.rename("mask1"),
+        aus2200_sbi.mask.rename("mask2"),
+        aus2200_fuzzy.mask.rename("mask3")],
+        join="inner").sel(time=time_slice).persist()
     # plot_ds = xr.Dataset(
     #         {
     #         "field1":aus2200_Fc_smooth,
@@ -590,11 +617,8 @@ def aus2200_animation(lat_slice,lon_slice,time_slice):
     #          }
     #          ).sel(lat=lat_slice,lon=lon_slice,time=time_slice).chunk({"time":1,"lat":-1,"lon":-1}).persist()
 
-    xmovie_animation_plotmasks_4fields(
-        plot_ds,
-        vmins=[0,-50,-50,0],
-        vmaxs=[0.5,50,50,1],
-        field_titles=["Fuzzy function","Coast F","F","sbi"])
+    xmovie_animation_plotmasks_3mask_only(
+        plot_ds)
     # xmovie_animation_plotmasks_1fields(
     #     plot_ds,
     #     vmins=[-50],
@@ -726,7 +750,7 @@ if __name__ == "__main__":
     
     #lat_slice, lon_slice = utils.get_perth_large_bounds()
     lat_slice, lon_slice = utils.get_darwin_large_bounds()
-    time_slice = slice("2016-01-06 00:00","2016-01-12 23:00")
+    time_slice = slice("2016-01-01 00:00","2016-01-31 23:00")
 
     # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_perth_20160106_20160112")
 
@@ -734,7 +758,7 @@ if __name__ == "__main__":
     # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_darwin_20160106_20160112")
 
     #barra_c_animation(lat_slice,lon_slice,time_slice)
-    aus2200_animation(lat_slice,lon_slice,time_slice)
+    aus2200_animation(None,None,time_slice)
 
 
     # rid="70"

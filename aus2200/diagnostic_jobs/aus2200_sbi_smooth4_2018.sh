@@ -5,8 +5,8 @@
 #PBS -l walltime=6:00:00,mem=2940GB 
 #PBS -l ncpus=48
 #PBS -l jobfs=190gb
-#PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth_sbi_2018.o 
-#PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth_sbi_2018.e
+#PBS -o /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth4_sbi_2018.o 
+#PBS -e /home/548/ab4502/working/ExtremeWind/jobs/messages/aus2200_smooth4_sbi_2018.e
 #PBS -l storage=gdata/ng72+gdata/hh5+gdata/ua8+gdata/bs94
  
 #Set up conda/shell environments 
@@ -16,4 +16,4 @@ module load dask-optimiser
 
 python /home/548/ab4502/working/sea_breeze/aus2200/aus2200_sbi.py "2018-01-01 01:00" "2018-01-31 23:00" --lat1 "-45.7" --lat2 "-6.9" --lon1 "108" --lon2 "158.5" --lev_chunk "-1" --lon_chunk "-1" --lat_chunk "-1" --time_chunk "1" --model aus2200_smooth_s4 --exp_id "mjo-lanina2018" --hgt1 "0" --hgt2 "4500" --interp_hgt --smooth --sigma 4
 
-python /home/548/ab4502/working/sea_breeze/aus2200/aus2200_sbi.py "2018-02-01 01:00" "2018-02-28 23:00" --lat1 "-45.7" --lat2 "-6.9" --lon1 "108" --lon2 "158.5" --lev_chunk "-1" --lon_chunk "-1" --lat_chunk "-1" --time_chunk "1" --model aus2200_smooth_s4 --exp_id "mjo-lanina2018" --hgt1 "0" --hgt2 "4500" --interp_hgt --smooth --sigma 4
+#python /home/548/ab4502/working/sea_breeze/aus2200/aus2200_sbi.py "2018-02-01 01:00" "2018-02-28 23:00" --lat1 "-45.7" --lat2 "-6.9" --lon1 "108" --lon2 "158.5" --lev_chunk "-1" --lon_chunk "-1" --lat_chunk "-1" --time_chunk "1" --model aus2200_smooth_s4 --exp_id "mjo-lanina2018" --hgt1 "0" --hgt2 "4500" --interp_hgt --smooth --sigma 4

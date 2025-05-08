@@ -14,4 +14,4 @@ module use /g/data/hh5/public/modules
 module load conda/analysis3
 module load dask-optimiser
 
-python /home/548/ab4502/working/sea_breeze/visualisation.py
+python /home/548/ab4502/working/sea_breeze/visualisation/visualisation.py
