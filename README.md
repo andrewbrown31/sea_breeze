@@ -21,16 +21,16 @@ These are functions for calculating sea breeze diagnostics, and can be found in 
 
 Details on each diagnostic can be found in the relevant docstrings. For the fuzzy logic algoirithm, hourly changes in wind, temperature, and moisture need to be first calculated using the `hourly_change` function. It is recommended to calculate hourly changes for the entire period of interest, as the algorithm needs to find percentiles of the distribution of each hourly change.
 
-For processing the diagnostic functions, python scripts exist in each of the model directories (e.g. [`aus2200/aus2200_sbi.py`](aus2200/aus2200_sbi.py) calculates the sea breeze index from AUS2200) as well bash scripts that submit those python scripts to the PBS queue (e.g. [`aus2200/aus2200_sbi.sh`](aus2200/aus2200_sbi.sh)). Note that for high resolution data such as AUS2200 or BARRA-C, large amounts of memory may be required.
+For processing the diagnostic functions, python scripts exist in each of the model directories (e.g. [`aus2200/aus2200_sbi.py`](https://github.com/andrewbrown31/sea_breeze_analysis/blob/main/aus2200/aus2200_sbi.py) calculates the sea breeze index from AUS2200) as well bash scripts that submit those python scripts to the PBS queue (e.g. [`aus2200/aus2200_sbi.sh`](https://github.com/andrewbrown31/sea_breeze_analysis/blob/main/aus2200/diagnostic_jobs/aus2200_sbi_smooth4_2016.sh)). Note that for km-scale data (such as AUS2200 or BARRA-C), large amounts of memory may be required.
 
 
 ## Sea breeze filtering
 
 These functions convert the sea breeze diagnostics to a binary mask of candidate sea breeze objects, which are then refined by applying several filters of known sea breeze characteristics. Functions can be found in [`sea_breeze_filters`](sea_breeze_filters.py). There are several filters that can be applied in `filter_3d` (see docstring). Output from `filter_3d` is a binary dataset of sea breeze objects. 
 
-For processing the filtering, python scripts exist in each of the model directories (e.g. [`aus2200/filter.py`](aus2200/filter.py) applies filtering to AUS2200 data) as well bash scripts that submit those python scripts to the PBS queue (e.g. [`aus2200/filter.sh`](aus2200/filter.sh)). Again, for high-resolution data such as AUS2200 or BARRA-C, large amounts of memory may be required.
+The [`filter.py`](filter.py) script is used to drive the filtering processing, as well bash scripts that submit those python scripts to the PBS queue (e.g. [`aus2200/filter.sh`](https://github.com/andrewbrown31/sea_breeze_analysis/blob/main/aus2200/filter_jobs/filter_smooth_s4.sh)). Again, for km-scale model data large amounts of memory may be required. There are a variety of settings in the filtering script, and it is noted that the `land_sea_temperature_filter` currently causes significant slowdown due to radial searching around sea breeze objects.
 
-For calculating the threshold to mask with, the [`compute_percentiles.py`](compute_percentiles.py) function can be used prior to the filtering. That way, the percentile threshold can be taken from a distribution over a longer period (say, several months) than the filtering period (say, a single day).
+For calculating the threshold to mask with, the [`percentile`](sea_breeze_filters.py#L72) function can be used prior to the filtering. That way, the percentile threshold can be taken from a distribution over a longer period (say, several months) than the filtering period (say, a single day).
 
 ## Example 
 
@@ -38,4 +38,9 @@ An example notebook demonstrating these three steps is available [here](example_
 
 ## Notes
 
-In practice, diagnostics should be saved after that step, and reloaded for filtering. This is because each is a computationally heavy task, especially for AUS2200 and BARRA-C. The zarr format is preferable for saving output given that functions here generally use the dask distributed framework.
+In practice, diagnostics should be saved to disk, and reloaded for filtering. This is because each is a computationally heavy task, especially for km-scale model data. The zarr format is preferable for saving output for efficiency.
+
+## Contributing
+
+If would like to make changes to include this code, please reach out or make an issue!
+

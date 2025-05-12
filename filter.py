@@ -1,168 +1,8 @@
-import xarray as xr
-#from sea_breeze import sea_breeze_filters, load_model_data, sea_breeze_funcs
 from dask.distributed import Client
-from sea_breeze.utils import load_diagnostics
 import pandas as pd
-from dask.distributed import Client
 import warnings
 import argparse
 import os
-
-def load_era5_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
-
-    """
-    Load the data needed for filtering from ERA5.
-    Args:
-        lon_slice (slice): The longitude slice to load.
-        lat_slice (slice): The latitude slice to load.
-        t1 (str): The start time of the data to load.
-        t2 (str): The end time of the data to load.
-        base_path (str): The base path for the data.
-        model (str): The model name.
-    Returns:
-        angle_ds (xarray.Dataset): The dataset containing the coastline angle.
-        hourly_change_ds (xarray.Dataset): The dataset containing the hourly change.
-        ta (xarray.DataArray): The dataset containing the temperature.
-        uas (xarray.DataArray): The dataset containing the u-component of the wind.
-        vas (xarray.DataArray): The dataset containing the v-component of the wind.
-        uprime (xarray.DataArray): The rotated u-component of the wind.
-        vprime (xarray.DataArray): The rotated v-component of the wind.
-        lsm (xarray.DataArray): The land-sea mask.
-    """
-
-    angle_ds_path = base_path +\
-        "coastline_data/era5.nc"
-    angle_ds = load_model_data.get_coastline_angle_kernel(
-        compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
-        )
-    ta = load_model_data.load_era5_variable(
-        ["2t"],t1,t2,lon_slice,lat_slice,chunks={}
-        )["2t"]["t2m"].chunk({"time":1,"lat":-1,"lon":-1})
-    uas = load_model_data.load_era5_variable(
-        ["10u"],t1,t2,lon_slice,lat_slice,chunks={}
-        )["10u"]["u10"].chunk({"time":1,"lat":-1,"lon":-1})
-    vas = load_model_data.load_era5_variable(
-        ["10v"],t1,t2,lon_slice,lat_slice,chunks={}
-        )["10v"]["v10"]   .chunk({"time":1,"lat":-1,"lon":-1})
-    uprime,vprime = sea_breeze_funcs.rotate_wind(
-        uas,
-        vas,
-        angle_ds["angle_interp"])
-    _,lsm,_ = load_model_data.load_era5_static(
-        lon_slice,lat_slice,t1,t2
-        )
-
-    return angle_ds, ta, uas, vas, uprime, vprime, lsm
-
-def load_barra_r_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
-
-    angle_ds_path = base_path +\
-        "coastline_data/barra_r.nc"
-    angle_ds = load_model_data.get_coastline_angle_kernel(
-        compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
-        )
-    ta = load_model_data.load_barra_variable(
-        "tas",t1,t2,"AUS-11","1hr",lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
-        )
-    uas = load_model_data.load_barra_variable(
-        "uas",t1,t2,"AUS-11","1hr",lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
-        )
-    vas = load_model_data.load_barra_variable(
-        "vas",t1,t2,"AUS-11","1hr",lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
-        )
-    uprime, vprime = sea_breeze_funcs.rotate_wind(
-        uas,
-        vas,
-        angle_ds["angle_interp"])
-    _,lsm = load_model_data.load_barra_static(
-        "AUS-11",lon_slice,lat_slice
-        )
-
-    return angle_ds, ta, uas, vas, uprime.drop("height"), vprime.drop("height"), lsm
-
-def load_barra_c_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
-
-    angle_ds_path = base_path +\
-        "coastline_data/barra_c.nc"
-    angle_ds = load_model_data.get_coastline_angle_kernel(
-        compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
-        )
-    ta = load_model_data.load_barra_variable(
-        "tas",t1,t2,"AUST-04","1hr",lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
-        )
-    uas = load_model_data.load_barra_variable(
-        "uas",t1,t2,"AUST-04","1hr",lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
-        )
-    vas = load_model_data.load_barra_variable(
-        "vas",t1,t2,"AUST-04","1hr",lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
-        )
-    uprime, vprime = sea_breeze_funcs.rotate_wind(
-        uas,
-        vas,
-        angle_ds["angle_interp"])
-    _,lsm = load_model_data.load_barra_static(
-        "AUST-04",lon_slice,lat_slice
-        )
-
-    return angle_ds, ta, uas, vas, uprime.drop("height"), vprime.drop("height"), lsm
-
-def load_aus2200_filtering_data(lon_slice,lat_slice,t1,t2,base_path,exp_id):
-
-    #Load other datasets that can be used for additional filtering
-    angle_ds_path = base_path +\
-        "coastline_data/aus2200.nc"
-    angle_ds = load_model_data.get_coastline_angle_kernel(
-        compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
-        )
-    ta = load_model_data.load_aus2200_variable(
-        "ta",
-        t1,
-        t2,
-        exp_id,
-        lon_slice,
-        lat_slice,
-        "1hr",
-        smooth=False,
-        hgt_slice=slice(0,10),
-        chunks={"time":1,"lat":-1,"lon":-1}).sel(lev=5)
-    vas = load_model_data.round_times(
-        load_model_data.load_aus2200_variable(
-            "vas",
-            t1,
-            t2,
-            exp_id,
-            lon_slice,
-            lat_slice,
-            "10min",
-            chunks={"time":1,"lat":-1,"lon":-1},
-            staggered="lat",
-            smooth=False),
-            "10min")
-    uas = load_model_data.round_times(
-        load_model_data.load_aus2200_variable(
-            "uas",
-            t1,
-            t2,
-            exp_id,
-            lon_slice,
-            lat_slice,
-            "10min",
-            chunks={"time":1,"lat":-1,"lon":-1},
-            staggered="lon",
-            smooth=False),
-            "10min")
-    vas = vas.sel(time=vas.time.dt.minute==0)
-    uas = uas.sel(time=uas.time.dt.minute==0)    
-    uprime, vprime = sea_breeze_funcs.rotate_wind(
-        uas,
-        vas,
-        angle_ds["angle_interp"])
-    orog, lsm = load_model_data.load_aus2200_static(
-        "mjo-elnino2016",
-        lon_slice,
-        lat_slice)
-
-    return angle_ds, ta, uas, vas, uprime, vprime, lsm
 
 if __name__ == "__main__":
 
@@ -210,7 +50,7 @@ if __name__ == "__main__":
     client.register_plugin(UploadDirectory(
         "/home/548/ab4502/working/sea_breeze")
         )
-    from sea_breeze import load_model_data, sea_breeze_funcs, sea_breeze_filters
+    from sea_breeze import sea_breeze_filters, utils
 
     #Ignore warnings for runtime errors (divide by zero etc)
     warnings.simplefilter("ignore")
@@ -278,25 +118,25 @@ if __name__ == "__main__":
     #     field = load_diagnostics(field_name,model)[field_name]\
     #         .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
     #             .chunk({"time":1,"lat":-1,"lon":-1})
-    field = load_diagnostics(field_name,model)\
+    field = utils.load_diagnostics(field_name,model)\
         .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
             .chunk({"time":1,"lat":-1,"lon":-1})
 
     #Load other datasets that can be used for additional filtering
     if "era5" in model:
-        angle_ds, ta, uas, vas, uprime, vprime, lsm = load_era5_filtering_data(
+        angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_era5_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path
             )
     elif "barra_r" in model:
-        angle_ds, ta, uas, vas, uprime, vprime, lsm = load_barra_r_filtering_data(
+        angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_barra_r_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path
             )
     elif "barra_c" in model:
-        angle_ds, ta, uas, vas, uprime, vprime, lsm = load_barra_c_filtering_data(
+        angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_barra_c_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path
             )
     elif "aus2200" in model:
-        angle_ds, ta, uas, vas, uprime, vprime, lsm = load_aus2200_filtering_data(
+        angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_aus2200_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path,exp_id
             )
     
