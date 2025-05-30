@@ -72,7 +72,7 @@ def calc_sbi(wind_ds,
         wind_ds["v"] = wind_ds["v"] - v_mean
 
     #Convert coastline orientation angle to the angle perpendicular to the coastline (pointing away from coast. from north)
-    theta = (((angle_da+180)%360-90)%360)
+    theta = (angle_da + 90) % 360
 
     #Calculate wind directions (from N) for low level (alpha) and all levels (beta)
     def compute_wind_direction(u, v):
@@ -269,7 +269,7 @@ def rotate_wind(u,v,theta):
 
     return uprime, vprime    
 
-def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
+def hourly_change(q, t, u, v, angle_da, spatial_dims = ["lat","lon"], spatial_chunks=["auto","auto"]):#lat_chunk="auto", lon_chunk="auto"):
 
     """
     Calculate hourly changes in q, t, and onshore wind speed. Use thresholds on each to define candidate sea breezes 
@@ -285,15 +285,24 @@ def hourly_change(q, t, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"):
 
     * angle_da: xarray dataset containing coastline angles ("angle_interp")
 
+    * spatial_dims: list of spatial dimensions to chunk. Default is ["lat","lon"]
+
+    * spatial_chunks: list of spatial chunk sizes. Default is ["auto","auto"]
+
     ## Output:
     * xarray dataset
     """
 
     #Rechunk data in one time dim
-    q = q.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
-    u = u.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
-    v = v.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
-    t = t.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # q = q.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # u = u.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # v = v.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    # t = t.chunk({"time":-1,"lat":lat_chunk,"lon":lon_chunk})
+    for i in range(len(spatial_dims)):
+        q = q.chunk({"time":-1,spatial_dims[i]:spatial_chunks[i]})
+        u = u.chunk({"time":-1,spatial_dims[i]:spatial_chunks[i]})
+        v = v.chunk({"time":-1,spatial_dims[i]:spatial_chunks[i]})
+        t = t.chunk({"time":-1,spatial_dims[i]:spatial_chunks[i]})
 
     #Convert hus to g/kg 
     q = q * 1000

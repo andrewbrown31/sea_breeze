@@ -5,7 +5,7 @@ import pandas as pd
 import datetime as dt
 import metpy.calc as mpcalc
 from skimage.segmentation import find_boundaries
-import xesmf as xe
+#import xesmf as xe
 import dask.array as da
 import scipy
 from dask.distributed import progress
@@ -17,7 +17,7 @@ def interp_scipy(x, xp, fp):
     f = scipy.interpolate.interp1d(xp, fp, kind="linear", fill_value="extrapolate")
     return f(x)
 
-def interp_model_level_to_z(z_da,var_da,mdl_dim,heights):
+def interp_model_level_to_z(z_da,var_da,mdl_dim,heights,model="ERA5"):
 
     '''
     Linearly interpolate from model level data to geopotential height levels.
@@ -32,7 +32,8 @@ def interp_model_level_to_z(z_da,var_da,mdl_dim,heights):
     heights: numpy array of height levels
     '''
 
-    assert z_da[mdl_dim][0] > z_da[mdl_dim][-1], "Model levels should be decreasing"
+    if model=="ERA5":
+        assert z_da[mdl_dim][0] > z_da[mdl_dim][-1], "Model levels should be decreasing"
 
     interp_da = xr.apply_ufunc(interp_scipy,
                 heights,
@@ -444,8 +445,8 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
             return ds   
 
     #Set up the time and lat/lon slices if the data is staggered
+    orog, lsm = load_aus2200_static(exp_id,lon_slice,lat_slice)
     if staggered is not None:
-        _, lsm = load_aus2200_static(exp_id,lon_slice,lat_slice)
         if staggered == "lat":
             lat_slice=slice(lat_slice.start-(dx*0.5),lat_slice.stop+(dx*0.5))
         elif staggered == "lon":
@@ -463,16 +464,13 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
         else:
             raise ValueError("Invalid stagger dim")
     
-    #Load the data from disk. If hgt_slice is not None, then we are loading 3D data, with an option to interpolate to regular height levels
+    #Load the data from disk. If hgt_slice is not None, then we are loading 3D data
     fnames = "/g/data/bs94/AUS2200/"+exp_id+"/v1-0/"+freq+"/"+vname+"/"+vname+"_AUS2200*.nc"
     if hgt_slice is not None:
         da = xr.open_mfdataset(fnames, 
                                chunks=chunks, 
                                parallel=True, 
                                preprocess=_preprocess_hgt).sel(time=slice(t1,t2))[vname]
-        if interp_hgts:
-            chunks["lev"] = -1
-            da = da.chunk({"lev":-1}).interp(lev=np.arange(hgt_slice.start,hgt_slice.stop+dh,dh),method="linear",kwargs={"fill_value":"extrapolate"})
     else:
         da = xr.open_mfdataset(fnames,
                                chunks=chunks,
@@ -489,9 +487,8 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
     if staggered == "time":
         da = (da.isel(time=slice(0,-1)).assign_coords({"time":unstaggered_times}) +\
                     da.isel(time=slice(1,da.time.shape[0])).assign_coords({"time":unstaggered_times})) / 2
-    
+
     #Optional smoothing using gaussian filter
-    da = da.assign_attrs({"smoothed":smooth})
     if smooth:
         if smooth_axes is not None:
             for ax in smooth_axes:
@@ -506,6 +503,24 @@ def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt
             kwargs={"sigma":sigma,"axes":smooth_axes},
             template=da
         )
+
+    #Interpolate to regular height levels
+    if interp_hgts:
+        chunks["lev"] = -1
+        #da = da.chunk({"lev":-1}).interp(lev=np.arange(hgt_slice.start,hgt_slice.stop+dh,dh),method="linear",kwargs={"fill_value":"extrapolate"})
+        #Created in aus2200_hybrid_height_calc()
+        Z_agl = xr.open_zarr("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_z_agl.zarr/",
+                             chunks=chunks).Z_agl.sel(lev=da.lev,lat=da.lat,lon=da.lon)
+        da = interp_model_level_to_z(
+            Z_agl,
+            da.chunk({"lev":-1}),
+            "lev",
+            np.arange(hgt_slice.start,hgt_slice.stop+dh,dh),
+            model="AUS2200"
+            )        
+
+    da = da.assign_attrs({"smoothed":smooth})
+    if smooth:
         da = da.assign_attrs({"gaussian_smoothing_sigma":sigma})
 
     return da
@@ -871,3 +886,97 @@ def interpolate_variance(angle_ds):
     angle_ds["variance_interp"] = interpolated_variance_da
 
     return angle_ds
+
+def aus2200_hybrid_height_calc(height_coord="rho"):
+
+    """
+    This function calculates model level heights for the AUS2200 model, using either the eta_rho and eta_theta coordinates.
+    Model level heights are saved to disk as a zarr file, which can be used for interpolation of model data to the aus2200 height levels.
+    
+    #Input
+    * height_coord: string - either "rho" or "theta". This determines which coordinate to use for the hybrid height calculation. The default is "rho", for wind data
+    """
+
+    #From ~access/umdir/vn13.8/ctldata/vert/vertlevs_L70_50t_20s_80km
+    #This is a list of AUS2200 model levels and associated metadata, that will be used to reconstruct the hybrid height coordinate
+    first_constant_r_rho_level= 62
+    if height_coord == "rho":
+        eta=np.array([0.6249999E-04,   0.3333333E-03,   0.8333333E-03,   0.1500000E-02,   0.2333333E-02,
+            0.3333333E-02,   0.4500000E-02,   0.5833333E-02,   0.7333333E-02,   0.9000000E-02,
+            0.1083333E-01,   0.1283333E-01,   0.1500000E-01,   0.1733333E-01,   0.1983333E-01,
+            0.2250000E-01,   0.2533333E-01,   0.2833333E-01,   0.3150000E-01,   0.3483333E-01,
+            0.3833333E-01,   0.4200000E-01,   0.4583333E-01,   0.4983333E-01,   0.5400000E-01,
+            0.5833334E-01,   0.6283334E-01,   0.6750000E-01,   0.7233334E-01,   0.7733333E-01,
+            0.8250000E-01,   0.8783333E-01,   0.9333333E-01,   0.9900000E-01,   0.1048333E+00,
+            0.1108333E+00,   0.1170000E+00,   0.1233333E+00,   0.1298333E+00,   0.1365000E+00,
+            0.1433333E+00,   0.1503334E+00,   0.1575020E+00,   0.1648455E+00,   0.1723789E+00,
+            0.1801272E+00,   0.1881285E+00,   0.1964356E+00,   0.2051189E+00,   0.2142687E+00,
+            0.2239982E+00,   0.2344463E+00,   0.2457803E+00,   0.2581997E+00,   0.2719388E+00,
+            0.2872708E+00,   0.3045112E+00,   0.3240212E+00,   0.3462124E+00,   0.3715503E+00,
+            0.4005586E+00,   0.4338236E+00,   0.4719992E+00,   0.5158110E+00,   0.5660614E+00,
+            0.6236348E+00,   0.6895022E+00,   0.7647274E+00,   0.8504717E+00,   0.9480625E+00])
+    elif height_coord == "theta":
+        eta=np.array([0.0000000E+00,   0.1250000E-03,   0.5416666E-03,   0.1125000E-02,   0.1875000E-02,
+            0.2791667E-02,   0.3875000E-02,   0.5125000E-02,   0.6541667E-02,   0.8125000E-02,
+            0.9875000E-02,   0.1179167E-01,   0.1387500E-01,   0.1612500E-01,   0.1854167E-01,
+            0.2112500E-01,   0.2387500E-01,   0.2679167E-01,   0.2987500E-01,   0.3312500E-01,
+            0.3654167E-01,   0.4012500E-01,   0.4387500E-01,   0.4779167E-01,   0.5187500E-01,
+            0.5612501E-01,   0.6054167E-01,   0.6512500E-01,   0.6987500E-01,   0.7479167E-01,
+            0.7987500E-01,   0.8512500E-01,   0.9054167E-01,   0.9612500E-01,   0.1018750E+00,
+            0.1077917E+00,   0.1138750E+00,   0.1201250E+00,   0.1265417E+00,   0.1331250E+00,
+            0.1398750E+00,   0.1467917E+00,   0.1538752E+00,   0.1611287E+00,   0.1685623E+00,
+            0.1761954E+00,   0.1840590E+00,   0.1921980E+00,   0.2006732E+00,   0.2095645E+00,
+            0.2189729E+00,   0.2290236E+00,   0.2398690E+00,   0.2516917E+00,   0.2647077E+00,
+            0.2791699E+00,   0.2953717E+00,   0.3136506E+00,   0.3343919E+00,   0.3580330E+00,
+            0.3850676E+00,   0.4160496E+00,   0.4515977E+00,   0.4924007E+00,   0.5392213E+00,
+            0.5929016E+00,   0.6543679E+00,   0.7246365E+00,   0.8048183E+00,   0.8961251E+00,
+            0.1000000E+01])
+    else:
+        raise ValueError("height_coord must be either 'rho' or 'theta'")        
+    
+    #Load the atmosphere_hybrid_height_coordinate variable as levs
+    ua = xr.open_dataset(
+        "/g/data/bs94/AUS2200/mjo-neutral2013/v1-0/1hr/ua/ua_AUS2200_mjo-neutral_1hrPt_201303011900-201303020000.nc",
+        chunks={}
+        )
+    levs = ua.lev.values
+
+    #Load the orography file
+    orog = xr.open_dataset("/g/data/bs94/AUS2200/mjo-neutral2013/v1-0/fx/orog/orog_AUS2200_mjo-neutral_fx.nc")
+
+    #Calculate C 
+    C = (1 - eta / eta[first_constant_r_rho_level-1])**2
+    C[first_constant_r_rho_level:] = 0
+
+    #Z will be of shape lat,lon,lev, so repeat C over lat/lon dimensions
+    C_repeated = np.repeat(
+            np.repeat(
+            C[np.newaxis,np.newaxis,0:len(levs)],
+            orog.orog.shape[0],
+            axis=0),
+        orog.orog.shape[1],
+        axis=1
+    )
+
+    #And repeat orography over the level dimension
+    orog_repeated = np.repeat(
+        orog.orog.values[:,:,np.newaxis],
+        len(levs),
+        axis=2)
+    
+    #Calculate the height above sea level
+    Z = levs + C_repeated * orog_repeated
+
+    #Convert to height above ground level and assign to a chunked dataarray
+    Z_agl_da = xr.DataArray(Z - orog_repeated,
+                dims=["lat","lon","lev"],
+                coords={"lat":orog.lat,"lon":orog.lon,"lev":ua.lev}).chunk({
+        "lev":-1,
+        "lon":ua.ua.chunksizes["lon"][0],
+        "lat":ua.ua.chunksizes["lat"][0]})
+
+    #Assign attributes and save to disk
+    xr.Dataset({"Z_agl":Z_agl_da.assign_attrs(
+        {"description":"Height above surface for the AUS2200 grid",
+        "units":"m"}
+        )}).to_zarr("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_z_agl.zarr",mode="w")    

@@ -7,6 +7,7 @@ import zipfile
 import glob
 import pyproj
 import cartopy.crs as ccrs
+import pint_xarray
 
 def load_half_hourly_stn_obs(state,time_slice):
 
@@ -23,12 +24,13 @@ def load_half_hourly_stn_obs(state,time_slice):
     u,v = metpy.calc.wind_components(
         stn_obs.wspd.metpy.convert_units("m/s"),
         stn_obs.wdir * metpy.units.units.deg)
-    stn_obs["u"] = u
-    stn_obs["v"] = v
+    stn_obs["u"] = u.pint.dequantify()
+    stn_obs["v"] = v.pint.dequantify()
 
     #Calculate specific humidity. TODO: Change from mlsp to sp.
     stn_obs["Tdew"] = stn_obs["Tdew"].assign_attrs(units = "degC")
     stn_obs["hus"] = mpcalc.specific_humidity_from_dewpoint(stn_obs["mslp"],stn_obs["Tdew"])
+    stn_obs["hus"] = stn_obs["hus"].pint.dequantify()
 
     return stn_obs
 

@@ -1,7 +1,7 @@
 import numpy as np
 import metpy.calc as mpcalc
 import xarray as xr
-import xesmf as xe
+#import xesmf as xe
 import skimage
 import glob
 from sea_breeze import load_model_data, sea_breeze_funcs
@@ -114,16 +114,16 @@ def get_gippsland_bounds():
     lon_slice = slice(146, 149)
     return lat_slice, lon_slice 
 
-def regrid(da,new_lon,new_lat):
-    """
-    Regrid a dataarray to a new grid
-    """
+# def regrid(da,new_lon,new_lat):
+#     """
+#     Regrid a dataarray to a new grid
+#     """
     
-    ds_out = xr.Dataset({"lat":new_lat,"lon":new_lon})
-    regridder = xe.Regridder(da,ds_out,"bilinear")
-    dr_out = regridder(da,keep_attrs=True)
+#     ds_out = xr.Dataset({"lat":new_lat,"lon":new_lon})
+#     regridder = xe.Regridder(da,ds_out,"bilinear")
+#     dr_out = regridder(da,keep_attrs=True)
 
-    return dr_out
+#     return dr_out
 
 def binary_closing_time_slice(time_slice,disk_radius=1):
     out_ds = xr.DataArray(skimage.morphology.binary_closing(time_slice.squeeze(), skimage.morphology.disk(disk_radius)),
