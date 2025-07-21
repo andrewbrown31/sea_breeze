@@ -555,6 +555,99 @@ def barra_r_animation(lat_slice,lon_slice,time_slice):
         vmaxs=[0.5,20,20],
         field_titles=["Fuzzy function","Coast F","F"])
 
+def plot_field_and_mask(ds,fig,tt,framedim,cmap,vmax,vmin,**kwargs):
+
+    ax1 = plt.axes(projection=ccrs.PlateCarree())
+    ds["field"].isel({framedim:tt}).plot(ax=ax1,vmin=vmin,vmax=vmax,transform=ccrs.PlateCarree(),cmap=cmap,extend="both")
+    xr.plot.contour(ds.mask.isel({framedim:tt}),levels=1,colors="k",linewidths=1,ax=ax1,transform=ccrs.PlateCarree())
+    xr.plot.contour(ds.mask_all.isel({framedim:tt}),levels=1,colors="k",linewidths=0.2,ax=ax1,transform=ccrs.PlateCarree())
+
+    ds.isel({framedim:tt}).coarsen({"lat":75,"lon":75},boundary="trim").mean().plot.quiver(x="lon",y="lat",u="uas",v="vas",ax=ax1,scale=300,transform=ccrs.PlateCarree(),width=0.002,add_guide=False)
+
+    ax1.coastlines(lw=0.1)
+    ax1.set_title("")
+    fig.suptitle(ds.isel(time=tt).time.values)
+
+    plt.close(fig)
+    
+    return None, None
+
+def xmovie_animation_field_and_mask(ds,vmax=None,vmin=None,cmap="Reds"):
+
+    mov = xmovie.Movie(
+        ds,
+        pixelwidth=1200,
+        pixelheight=1000,
+        plotfunc=plot_field_and_mask,
+        input_check=False,
+        cmap=cmap,
+        vmax=vmax,
+        vmin=vmin,
+    )
+    mov.save(
+        "/scratch/ng72/ab4502/temp_figs/animation.mp4",
+        overwrite_existing=True,
+        parallel=True,
+        progress=True,
+        framerate=5)
+
+def field_and_mask_animation(lat_slice,lon_slice,time_slice,field="gust",mask_name="F",cmap="Reds",vmin=None,vmax=None):
+
+    from sea_breeze import load_model_data, sea_breeze_funcs
+
+    uas = load_model_data.load_aus2200_variable("uas",time_slice.start,time_slice.stop,"mjo-elnino2016",lon_slice,lat_slice,"10min",staggered="lon",chunks={"time":1,"lat":-1,"lon":-1})        
+    vas = load_model_data.load_aus2200_variable("vas",time_slice.start,time_slice.stop,"mjo-elnino2016",lon_slice,lat_slice,"10min",staggered="lat",chunks={"time":1,"lat":-1,"lon":-1})        
+    vas = vas.sel(time=vas.time.dt.minute==0)
+    uas = uas.sel(time=uas.time.dt.minute==0)    
+    wind_components_ds = xr.Dataset({
+        "uas": uas,
+        "vas": vas
+        })
+
+    if field == "gust":
+        field_ds = load_model_data.load_aus2200_variable("wsgmax10m",time_slice.start,time_slice.stop,"mjo-elnino2016",lon_slice,lat_slice,"10min",staggered="time",chunks={"time":1,"lat":-1,"lon":-1})
+        field_ds = field_ds.sel(time=field_ds.time.dt.minute == 0)
+    elif field == "hus":
+        field_ds = load_model_data.load_aus2200_variable("hus",time_slice.start,time_slice.stop,"mjo-elnino2016",lon_slice,lat_slice,"1hr",hgt_slice=slice(0,10),chunks={"time":1,"lat":-1,"lon":-1}).sel(lev=5)        
+    elif field == "tas":
+        field_ds = load_model_data.load_aus2200_variable("ta",time_slice.start,time_slice.stop,"mjo-elnino2016",lon_slice,lat_slice,"1hr",hgt_slice=slice(0,10),chunks={"time":1,"lat":-1,"lon":-1}).sel(lev=5)       
+    elif field == "theta":
+        tas = load_model_data.load_aus2200_variable("ta",time_slice.start,time_slice.stop,"mjo-elnino2016",lon_slice,lat_slice,"1hr",hgt_slice=slice(0,10),chunks={"time":1,"lat":-1,"lon":-1}).sel(lev=5)         
+        pfull = load_model_data.load_aus2200_variable("pfull",time_slice.start,time_slice.stop,"mjo-elnino2016",lon_slice,lat_slice,"1hr",chunks={"time":1,"lat":-1,"lon":-1})
+    elif field == "uprime":
+        angle_ds = load_model_data.get_coastline_angle_kernel(
+            compute=False,
+            path_to_load="/g/data/ng72/ab4502/coastline_data/aus2200.nc",
+            lat_slice=lat_slice,
+            lon_slice=lon_slice)
+        _, field_ds = sea_breeze_funcs.rotate_wind(uas,vas,angle_ds.angle_interp)
+    else:
+        raise ValueError("Field must be 'gust' or 'hus'.")
+
+    if mask_name == "F":
+        mask = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filters/filtered_mask_no_hourly_change_F_201601*",engine="zarr")    
+        diagnostic = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/F_mjo*201601*",engine="zarr",chunks={"time":1,"lat":-1,"lon":-1})
+        mask_all = diagnostic.F >= mask.mask.threshold
+    elif mask_name == "sbi":
+        mask = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filters/filtered_mask_no_hourly_change_sbi_201601*",engine="zarr")    
+        diagnostic = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/sbi_mjo*201601*",engine="zarr",chunks={"time":1,"lat":-1,"lon":-1})
+        mask_all = diagnostic.sbi >= mask.mask.threshold
+    elif mask_name == "fuzzy":
+        mask = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/filters/filtered_mask_no_hourly_change_fuzzy_201601*",engine="zarr")    
+        diagnostic = xr.open_mfdataset("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_smooth_s4/fuzzy_mjo*201601*",engine="zarr",chunks={"time":1,"lat":-1,"lon":-1})
+        mask_all = diagnostic["__xarray_dataarray_variable__"] >= mask.mask.threshold
+    else:
+        raise ValueError("mask_name must be one of 'F', 'sbi', or 'fuzzy'.")
+
+    plot_ds = xr.merge([
+        field_ds.rename("field"),
+        mask.mask.rename("mask"),
+        wind_components_ds,
+        mask_all.rename("mask_all")],
+        join="inner").sel(time=time_slice).persist()
+    
+    xmovie_animation_field_and_mask(plot_ds,cmap=cmap,vmin=vmin,vmax=vmax)
+
 def aus2200_animation(lat_slice,lon_slice,time_slice):
 
     #Load funcs
@@ -618,7 +711,8 @@ def aus2200_animation(lat_slice,lon_slice,time_slice):
     #          ).sel(lat=lat_slice,lon=lon_slice,time=time_slice).chunk({"time":1,"lat":-1,"lon":-1}).persist()
 
     xmovie_animation_plotmasks_3mask_only(
-        plot_ds)
+        plot_ds,
+        field="hus")
     # xmovie_animation_plotmasks_1fields(
     #     plot_ds,
     #     vmins=[-50],
@@ -749,8 +843,12 @@ if __name__ == "__main__":
     #Lat/lon/time bounds
     
     #lat_slice, lon_slice = utils.get_perth_large_bounds()
-    lat_slice, lon_slice = utils.get_darwin_large_bounds()
-    time_slice = slice("2016-01-01 00:00","2016-01-31 23:00")
+    #lat_slice, lon_slice = utils.get_darwin_large_bounds()
+    #time_slice = slice("2016-01-01 00:00","2016-01-31 23:00")
+
+    t1="2016-01-08 00:00"
+    t2="2016-01-15 23:00"
+    lat_slice,lon_slice = utils.get_aus_bounds()
 
     # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_perth_20160106_20160112")
 
@@ -758,7 +856,8 @@ if __name__ == "__main__":
     # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_darwin_20160106_20160112")
 
     #barra_c_animation(lat_slice,lon_slice,time_slice)
-    aus2200_animation(None,None,time_slice)
+    #aus2200_animation(None,None,time_slice)
+    field_and_mask_animation(lat_slice,lon_slice,slice(t1,t2),cmap="Blues",field="hus",mask_name="F",vmin=0.005,vmax=0.02)
 
 
     # rid="70"
