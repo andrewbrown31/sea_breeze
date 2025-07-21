@@ -5,6 +5,7 @@ import xarray as xr
 import skimage
 import glob
 from sea_breeze import load_model_data, sea_breeze_funcs
+import os
 
 def load_diagnostics(field,model):
 
@@ -26,22 +27,27 @@ def load_diagnostics(field,model):
         #If the field is not "fuzzy", we need to open multiple files. Get the file names using glob
         # and open them using xarray
         if "aus2200" in model:
-            fn1 = glob.glob(f"{path}/{model}/{field}_mjo-neutral2013_20130101??00_201301312300.zarr")[0]
-            fn2 = glob.glob(f"{path}/{model}/{field}_mjo-neutral2013_20130201??00_201302282300.zarr")[0]
-            fn3 = glob.glob(f"{path}/{model}/{field}_mjo-elnino2016_20160101??00_201601312300.zarr")[0]
-            fn4 = glob.glob(f"{path}/{model}/{field}_mjo-elnino2016_20160201??00_201602292300.zarr")[0]
-            fn5 = glob.glob(f"{path}/{model}/{field}_mjo-lanina2018_20180101??00_201801312300.zarr")[0]
-            fn6 = glob.glob(f"{path}/{model}/{field}_mjo-lanina2018_20180201??00_201802282300.zarr")[0]
+            fn1 = glob.glob(f"{path}/{model}/{field}_mjo-neutral2013_20130101??00_201301312300.zarr")
+            fn2 = glob.glob(f"{path}/{model}/{field}_mjo-neutral2013_20130201??00_201302282300.zarr")
+            fn3 = glob.glob(f"{path}/{model}/{field}_mjo-elnino2016_20160101??00_201601312300.zarr")
+            fn4 = glob.glob(f"{path}/{model}/{field}_mjo-elnino2016_20160201??00_201602292300.zarr")
+            fn5 = glob.glob(f"{path}/{model}/{field}_mjo-lanina2018_20180101??00_201801312300.zarr")
+            fn6 = glob.glob(f"{path}/{model}/{field}_mjo-lanina2018_20180201??00_201802282300.zarr")
+            fn_list = fn1+fn2+fn3+fn4+fn5+fn6
         else:
             fn1 = f"{path}/{model}/{field}_201301010000_201301312300.zarr"
             fn2 = f"{path}/{model}/{field}_201302010000_201302282300.zarr"
             fn3 = f"{path}/{model}/{field}_201601010000_201601312300.zarr"
             fn4 = f"{path}/{model}/{field}_201602010000_201602292300.zarr"
             fn5 = f"{path}/{model}/{field}_201801010000_201801312300.zarr"
-            fn6 = f"{path}/{model}/{field}_201802010000_201802282300.zarr"
+            fn6 = f"{path}/{model}/{field}_201802010000_201802282300.zarr"            
+            fn_list = [fn1]+[fn2]+[fn3]+[fn4]+[fn5]+[fn6]
+            exist = [os.path.exists(fn) for fn in fn_list]
+            fn_list = np.array(fn_list)[exist]
+
         
         ds = xr.open_mfdataset(
-            [fn1,fn2,fn3,fn4,fn5,fn6],
+            fn_list,
             engine="zarr")[field]
 
     return ds   
@@ -287,3 +293,40 @@ def load_aus2200_filtering_data(lon_slice,lat_slice,t1,t2,base_path,exp_id):
         lat_slice)
 
     return angle_ds, ta, uas, vas, uprime, vprime, lsm
+
+
+def local_time(ds):
+    lst_da_ls = []
+    for h in np.arange(0,24):
+        lst = [dt.datetime(2000,1,1,h) + dt.timedelta(hours=l / 180 * 12) for l in ds.lon.values]
+        lst = np.array(pd.to_datetime(lst).round("h").hour)
+        #lst = np.array(pd.to_datetime(lst))
+        lst_arr = np.repeat(lst[np.newaxis,:],ds.lat.shape,axis=0)
+        lst_da = xr.DataArray(data=lst_arr,dims=["lat","lon"],coords={"lat":ds.lat,"lon":ds.lon})
+        lst_da_ls.append(lst_da)
+    
+    lst_da = xr.concat(lst_da_ls,dim="hour")
+    lst_da = lst_da.assign_coords({"hour":np.arange(0,24)})
+
+    return lst_da
+
+def local_time_grid(ds):
+
+    timedelta_lon = np.array([np.timedelta64(int(l / 180 * 12 * 60 * 60), "s") for l in ds.lon])
+    timedelta_lon_time = np.repeat(timedelta_lon[np.newaxis,:],ds.time.shape,axis=0)
+
+    time = ds.time.values
+    time_lon = np.repeat(time[:,np.newaxis],ds.lon.shape,axis=1)
+
+    lst = time_lon + timedelta_lon_time
+
+    #round
+    lst = (lst + np.timedelta64(30,"m")).astype("datetime64[h]")
+
+    lst_da = xr.DataArray(
+        np.repeat(lst[:,np.newaxis,:].astype("datetime64[ns]"),ds.lat.shape[0],axis=1),
+        dims=["time","lat","lon"])
+    
+    hour_da = lst_da.dt.hour
+
+    groups = ds.groupby(hour_da).mean("time")
