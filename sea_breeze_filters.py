@@ -363,15 +363,9 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
     mask = mask.astype(bool)
 
     #Combine mask with label array and props_df
-    ds = xr.merge([
-        mask.assign_coords({"time":time}).expand_dims("time").rename("mask"),
-        xr.where(
-            labels_da.isin(props_df.index),labels_da,0
-            ).astype(np.int16).assign_coords({"time":time}).expand_dims("time").rename("filtered_labels"),
-        labels_da.astype(np.int16).assign_coords({"time":time}).expand_dims("time").rename("all_labels")
-        ])
-        #xr.Dataset.from_dataframe(props_df).assign_coords({"time":time}).expand_dims("time"),
+    ds = xr.Dataset({"mask":mask.assign_coords({"time":time}).expand_dims("time")})
 
+    #Option to add land sea temperature difference to the dataset
     if (output_land_sea_temperature_diff) & (mask_options.filters["land_sea_temperature_filter"]):
         ds = xr.merge((ds,land_sea_temp_diff.expand_dims("time").rename("land_sea_temp_diff")))
 
@@ -383,7 +377,7 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
 
     return ds, props_df
 
-def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_change_ds=None,ta=None,vprime=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,skipna=False,**kwargs):
+def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_change_ds=None,ta=None,vprime=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,skipna=False,output_chunks=None,**kwargs):
 
     """
     Driver function for filter_2d that creates a binary mask from a sea breeze diagnostic field, and works with a time dimension using xr.map_blocks. Docstring copied and adapted from filter_2d:
@@ -419,6 +413,8 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
     * props_df_output_path: path to output a csv file of the properties of each object (TODO, this currently only works properly for 2d filtering)   
 
     * skip_na: (experimental - need to validate) if the field contains nans, then the calculation of the field percentile will ignore nans if this is set to true. Uses the climtas package.
+
+    * output_chunks: The chunking to use for zarr output. If None, then the default is to keep the same chunking as used for the filtering, which is {"time":1,"lat":-1,"lon":-1}. If you want to change this, you can set it to {"time":-1,"lat":-1,"lon":-1} or {"time":-1,"lat":10,"lon":10}, for example.
 
     * **kwargs: options for filtering the sea breeze objects passed to filter_ds (see below)
 
@@ -551,7 +547,15 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
     
     #Save the filtered mask if required
     if save_mask:
-        mask_save = filtered_mask.to_zarr(filter_out_path,compute=False,mode="w")
+        drop_vars = ["crs","height","level_height","model_level_number","sigma"]
+        for v in drop_vars:
+            if v in list(filtered_mask.coords.keys()):
+                filtered_mask = filtered_mask.drop_vars(v)        
+
+        if output_chunks is None:
+            mask_save = filtered_mask.to_zarr(filter_out_path,compute=False,mode="w")
+        else:
+            mask_save = filtered_mask.chunk(output_chunks).to_zarr(filter_out_path,compute=False,mode="w")
         progress(mask_save.persist())
     
     return filtered_mask

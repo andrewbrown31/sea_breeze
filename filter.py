@@ -16,6 +16,10 @@ if __name__ == "__main__":
     parser.add_argument("--field_name",required=True,type=str,help="Name of the field to filter")
     parser.add_argument("--t1",required=True,type=str,help="Start time of the field to filter")
     parser.add_argument("--t2",required=True,type=str,help="End time of the field to filter")
+    parser.add_argument("--lat1",default=-45.7,type=float,help="Start latitude")
+    parser.add_argument("--lat2",default=-6.9,type=float,help="End latitude")
+    parser.add_argument("--lon1",default=108,type=float,help="Start longitude")
+    parser.add_argument("--lon2",default=158.5,type=float,help="End longitude")    
     parser.add_argument("--model",default="era5",type=str,help="Model directory name for input/output. Could be era5 (default)")
     parser.add_argument("--filter_name",default="",type=str,help="Filter name to add to the output file names")
     parser.add_argument("--threshold",default="fixed",type=str,help="Threshold to use for the filter. Could be fixed (default) or percentile")
@@ -61,6 +65,10 @@ if __name__ == "__main__":
     field_name = args.field_name
     t1 = args.t1
     t2 = args.t2
+    lat1 = args.lat1
+    lat2 = args.lat2
+    lon1 = args.lon1
+    lon2 = args.lon2
     threshold = args.threshold
     threshold_value = args.threshold_value
     p = args.p
@@ -83,8 +91,8 @@ if __name__ == "__main__":
     propagation_speed_thresh = args.propagation_speed_thresh
 
     #Set up lat/lon slices
-    lat_slice = slice(-45.7,-6.9)
-    lon_slice = slice(108,158.5)
+    lat_slice = slice(lat1,lat2)
+    lon_slice = slice(lon1,lon2)
 
     #Set base path
     base_path = "/g/data/ng72/ab4502/"
@@ -118,9 +126,25 @@ if __name__ == "__main__":
     #     field = load_diagnostics(field_name,model)[field_name]\
     #         .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
     #             .chunk({"time":1,"lat":-1,"lon":-1})
-    field = utils.load_diagnostics(field_name,model)\
-        .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
-            .chunk({"time":1,"lat":-1,"lon":-1})
+    #field = utils.load_diagnostics(field_name,model)\
+    #    .sel(lat=lat_slice,lon=lon_slice,time=slice(t1,t2))\
+    #        .chunk({"time":1,"lat":-1,"lon":-1})
+    field = utils.load_diagnostics_time_slice(
+        field_name,
+        model,
+        t1,
+        t2,
+        lat_slice=lat_slice,
+        lon_slice=lon_slice,
+    )[field_name]
+    hourly_change_ds = utils.load_diagnostics_time_slice(
+        "F_hourly",
+        model,
+        t1,
+        t2,
+        lat_slice=lat_slice,
+        lon_slice=lon_slice,
+    )
 
     #Load other datasets that can be used for additional filtering
     if "era5" in model:
@@ -139,7 +163,9 @@ if __name__ == "__main__":
         angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_aus2200_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path,exp_id
             )
-    
+    else:
+        raise ValueError("Model not recognised. Please use era5, barra_r, barra_c or aus2200.")
+        
     #Set up output paths
     props_df_out_path = base_path+\
         "sea_breeze_detection/"+model+"/props_df/props_df_"+filter_name+"_"+\
@@ -155,7 +181,7 @@ if __name__ == "__main__":
     #Run the filtering
     filtered_mask = sea_breeze_filters.filter_3d(
         field,
-        hourly_change_ds=None,
+        hourly_change_ds=hourly_change_ds,
         ta=ta,
         lsm=lsm,
         angle_ds=angle_ds,
@@ -167,6 +193,7 @@ if __name__ == "__main__":
         filter_out_path=filter_out_path,
         props_df_out_path=props_df_out_path,
         skipna=False,
+        output_chunks={"time":-1},  
         **kwargs)
 
     #Close client

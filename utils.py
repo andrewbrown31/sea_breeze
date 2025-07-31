@@ -6,6 +6,7 @@ import skimage
 import glob
 from sea_breeze import load_model_data, sea_breeze_funcs
 import os
+import pandas as pd
 
 def load_diagnostics(field,model):
 
@@ -51,6 +52,35 @@ def load_diagnostics(field,model):
             engine="zarr")[field]
 
     return ds   
+
+def load_diagnostics_time_slice(field,model,t1,t2,lat_slice,lon_slice):
+
+    path = "/g/data/ng72/ab4502/sea_breeze_detection"
+    files = np.sort(glob.glob(f"{path}/{model}/{field}_????????????_????????????.zarr"))
+    file_dates = [pd.to_datetime(f.split("/")[-1].split("_")[-2]) for f in files]
+    file_months = np.array([f.month for f in file_dates])
+    file_years = np.array([f.year for f in file_dates])
+
+    t1 = pd.to_datetime(t1)
+    t2 = pd.to_datetime(t2)
+
+    # Get the files that are within the time range
+    file_mask = (file_years == t1.year) & (file_months >= t1.month) & \
+                (file_years == t2.year) & (file_months <= t2.month)
+    files = files[file_mask]
+
+    if len(files) == 0:
+        raise ValueError(f"No files found for {field} in {model} between {t1} and {t2}")
+    else:
+        ds = xr.open_mfdataset(
+            files,
+            engine="zarr")
+
+    # Select the time slice
+    ds = ds.sel(lat=lat_slice, lon=lon_slice, time=slice(t1, t2)).chunk({"time": 1, "lat": -1, "lon": -1})
+
+    return ds
+
 
 def metpy_grid_area(lon,lat):
     """
