@@ -47,3 +47,5 @@ An example notebook demonstrating these three steps is available [here](example_
 
 If would like to make changes to improve this code, please reach out or make an issue!
 
+## Citing
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16938245.svg)](https://doi.org/10.5281/zenodo.16938245)
