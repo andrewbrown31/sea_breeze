@@ -1,6 +1,6 @@
 # Sea breeze detection
 
-This repository has code that is intended to detect sea breezes from numerical weather model output. The code relies heavily on xarray/dask, numpy, scipy, metpy, skimage, pyproj and pandas. The code is organised into three sequential steps:
+This repository has code that is intended to detect sea breezes from numerical weather model output. The code relies on xarray/dask, numpy, scipy, metpy, scikit-image, pyproj and pandas. The code is organised into three sequential steps:
 
 1) [Pre-processing model data](#pre-processing-model-data)
 2) [Calculating sea breeze diagnostics](#sea-breeze-diagnostics)
@@ -8,13 +8,13 @@ This repository has code that is intended to detect sea breezes from numerical w
 
 ## Pre-processing model data
 
-These are functions for loading and pre-processing model data, and can be found in [`load_model_data`](load_model_data.py). This includes loading temperature, moisture, wind, and static variables from four different model datasets hosted on the [NCI data catalog](https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/home). There is also a function that finds the angle of dominant coastline orientation from a land-sea mask ([`get_coastline_angle_kernel`](load_model_data.py#L639)). This is important for finding the onshore component of the wind that is used in most sea breeze diagnostics (with thanks to Ewan Short for developing this method and code).
+These are functions for loading and pre-processing model data, and can be found in [`load_model_data`](load_model_data.py). This includes loading temperature, moisture, wind, and static variables from four different model datasets hosted on the [NCI data catalog](https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/home) (requires the code to be run locally on the NCI system). There is also a function that finds the angle of dominant coastline orientation from a land-sea mask ([`get_coastline_angle_kernel`](load_model_data.py#L639)). This is important for finding the onshore component of the wind that is used in most sea breeze diagnostics (with thanks to Ewan Short for developing this method and code with input from Jarrah Harrison-Lofthouse).
 
 ## Sea breeze diagnostics
 
-These are functions for calculating sea breeze diagnostics, and can be found in [`sea_breeze_funcs`](sea_breeze_funcs.py). There are currently four key diagnostics:
+These are functions for calculating sea breeze diagnostics, and can be found in [`sea_breeze_funcs`](sea_breeze_funcs.py). There are currently three key diagnostics:
 
-* Kinematic frontogenesis (`kinematic_frontogenesis`)
+* Kinematic moisture frontogenesis (`kinematic_frontogenesis`)
 * Sea breeze index (`calc_sbi`)
 * Fuzzy logic algorithm (`fuzzy_function_combine`)
 
@@ -37,7 +37,7 @@ An example notebook demonstrating these three steps is available [here](example_
 
 ## Notes
 
-* Note that for km-scale data, large amounts of memory may be required for diagnostic calculation and model pre-processing.
+* For km-scale data, large amounts of memory may be required for diagnostic calculation and model pre-processing.
 
 * In practice, diagnostics should be saved to disk, and reloaded for filtering. This is because each is a computationally heavy task, especially for km-scale model data. The zarr format is used for saving output for efficiency.
 
