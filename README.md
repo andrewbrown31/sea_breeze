@@ -49,3 +49,8 @@ If would like to make changes to improve this code, please reach out or make an 
 
 ## Citing
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16938245.svg)](https://doi.org/10.5281/zenodo.16938245)
+
+## Further analysis
+Further analysis of sea breeze objects produced by this code is available in this repository: [https://github.com/andrewbrown31/sea_breeze_analysis](https://github.com/andrewbrown31/sea_breeze_analysis) (currently private, to be made public at a future date)
+
+This analysis is in support of Brown, Vincent and Short (in prep.).
