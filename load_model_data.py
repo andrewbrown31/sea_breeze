@@ -19,18 +19,33 @@ def interp_scipy(x, xp, fp):
 
 def interp_model_level_to_z(z_da,var_da,mdl_dim,heights,model="ERA5"):
 
-    '''
-    Linearly interpolate from model level data to geopotential height levels.
-    If the requested height is below the lowest model level, data from the lowest model level is returned.
-    Note that for ERA5, the lowest model level is within the first few 10s of meters above the surface.
-    If the requested height is above the highest model level, then NaNs are returned.
+    """
+    Linearly interpolate from model level data to height levels. Supported for AUS2200 and ERA5 data.
 
-    Input
-    z_da: xarray Dataarray of geopotential height (either AGL or above geoid)
-    var_da: xarray Dataarray of variable to interpolate
-    mdl_dim: name of the model level dimension (e.g. hybrid). NOTE that model levels must be decreasing (so height is increasing)
-    heights: numpy array of height levels
-    '''
+    Parameters
+    ----------
+    z_da : xarray.DataArray
+        Height data (either AGL or above geoid) for each model level.
+    var_da : xarray.DataArray
+        Variable to interpolate, with the same model level dimension as z_da.
+    mdl_dim : str
+        Name of the model level dimension (e.g., 'lev', 'hybrid'). Model levels must be decreasing (height increasing).
+    heights : numpy.ndarray
+        Array of target height levels to interpolate to.
+    model : str, optional
+        Model name, either "ERA5" or "AUS2200"
+
+    Returns
+    -------
+    xarray.DataArray
+        Variable interpolated to the specified height levels. If the requested height is below the lowest model level, data from the lowest model level is returned. If above the highest model level, NaNs are returned.
+
+    Notes
+    -----
+    - If the requested height is below the lowest model level, data from the lowest model level is returned.
+    - Note that for ERA5, the lowest model level is within the first few 10s of meters above the surface.
+    - If the requested height is above the highest model level, then NaNs are returned.
+    """
 
     if model=="ERA5":
         assert z_da[mdl_dim][0] > z_da[mdl_dim][-1], "Model levels should be decreasing"
@@ -356,16 +371,27 @@ def barra_sfc_moisture(huss,ps,tas):
 
 def load_aus2200_static(exp_id,lon_slice,lat_slice,chunks="auto"):
 
-    '''
-    Load static fields for the mjo-enso AUS2200 experiment, stored on the bs94 project
+    """
+    Load static fields for the mjo-enso AUS2200 experiment, stored on the bs94 project.
 
-    ## Input
-    * exp_id: string describing the experiment. either 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'
+    Parameters
+    ----------
+    exp_id : str
+        Experiment ID. Must be one of 'mjo-elnino2016', 'mjo-lanina2018', or 'mjo-neutral2013'.
+    lon_slice : slice or array-like
+        Slice or indices to restrict longitude domain.
+    lat_slice : slice or array-like
+        Slice or indices to restrict latitude domain.
+    chunks : str or dict, optional
+        Chunking for xarray open_mfdataset (default is "auto").
 
-    * lat_slice: a slice to restrict lat domain
-
-    * lon_slice: a slice to restrict lon domain
-    '''
+    Returns
+    -------
+    orog : xarray.DataArray
+        Orography field for the selected domain.
+    lsm : xarray.DataArray
+        Binary land-sea mask (1 for land, 0 for sea) for the selected domain.
+    """
 
     assert exp_id in ['mjo-elnino2016', 'mjo-lanina2018', 'mjo-neutral2013'], "exp_id must either be 'mjo-elnino2016', 'mjo-lanina2018' or 'mjo-neutral2013'"
     
@@ -391,45 +417,55 @@ def gaussian_filter_time_slice(time_slice,sigma,axes):
 
 def load_aus2200_variable(vname, t1, t2, exp_id, lon_slice, lat_slice, freq, hgt_slice=None, chunks="auto", staggered=None, dx=0.022, smooth=False, smooth_axes=None, sigma=2, interp_hgts=False, dh=100):
 
-    '''
+    """
     Load variables from the mjo-enso AUS2200 experiment, stored on the bs94 project.
 
-    Note that if the data is being smoothed or interpolated, then the relevant dimensions are set to -1 in the chunks dict
+    Parameters
+    ----------
+    vname : str
+        Name of AUS2200 variable to load.
+    t1 : str
+        Start time in "%Y-%m-%d %H:%M".
+    t2 : str
+        End time in "%Y-%m-%d %H:%M".
+    exp_id : str
+        Experiment ID. Must be one of 'mjo-elnino2016', 'mjo-lanina2018', or 'mjo-neutral2013'.
+    lon_slice : slice or array-like
+        Slice or indices to restrict longitude domain.
+    lat_slice : slice or array-like
+        Slice or indices to restrict latitude domain.
+    freq : str
+        Time frequency. Must be "10min", "1hr", or "1hrPlev".
+    hgt_slice : slice or array-like, optional
+        Slice to restrict data in the vertical (in m).
+    chunks : str or dict, optional
+        Chunking for xarray open_mfdataset (default is "auto").
+    staggered : str, optional
+        If not None, the data is staggered in the specified dimension ("lat", "lon", or "time").
+    dx : float, optional
+        The distance to stagger the data by if staggered in lat or lon (in degrees, default is 0.022).
+    smooth : bool, optional
+        If True, smooth the data using a Gaussian filter.
+    smooth_axes : iterable, optional
+        If smoothing, the axes to smooth over.
+    sigma : float, optional
+        If smoothing, the sigma of the Gaussian filter (default is 2).
+    interp_hgts : bool, optional
+        If True, interpolate the data to regular height levels.
+    dh : int, optional
+        If interpolating to height levels, the height increment (in m, default is 100).
 
-    ## Input
+    Returns
+    -------
+    da : xarray.DataArray
+        The requested variable, optionally smoothed and/or interpolated to regular height levels.
 
-    * vnames: names of aus2200 variable to load
-
-    * t1: start time in %Y-%m-%d %H:%M"
-
-    * t2: start time in %Y-%m-%d %H:%M"
-    
-    * exp_id: string describing the experiment. either 'mjo-elnino', 'mjo-lanina' or 'mjo-neutral'
-
-    * lat_slice: a slice to restrict lat domain
-
-    * lon_slice: a slice to restrict lon domain
-
-    * freq: time frequency (string). either "10min", "1hr", "1hrPlev"
-
-    * hgt_slice: a slice to restrict data in the vertical (in m)
-
-    * chunks: dict describing the number of chunks. see xr.open_dataset
-
-    * staggered: if not None, then the data is staggered in the dimension specified. Options are "lat", "lon", "time"
-
-    * dx: the distance to stagger the data by if staggered in lat or lon (in degrees)
-
-    * smooth: boolean - smooth the data using a gaussian filter
-
-    * smooth_axes: if smoothing, the axes to smooth over, as an iterable
-
-    * sigma: if smoothing, the sigma of the gaussian filter
-
-    * interp_hgts: boolean - interpolate the data to the height levels
-
-    * dh: if interpolating to height levels, the height increment (in m)
-    '''
+    Notes
+    -----
+    - This code currently does not support interpolating in height, as the relevant AUS2200 variable (Z_agl) is not on bs94. A version of Z_agl has been pre-computed and stored on ng72, and this is used if interp_hgts is True, but may not be accessible to all users.
+    - If the data is being smoothed or interpolated, the relevant dimensions are set to -1 in the chunks dict.
+    - De-staggering in lat/lon can fail at the domain edges depending on the slice used. If this happens, try extending the slice by one grid point in the relevant direction.
+    """
 
     #This code makes sure the inputs for experiment id and time frequency match what is on disk 
     assert exp_id in ['mjo-elnino2016', 'mjo-lanina2018', 'mjo-neutral2013'], "exp_id must either be 'mjo-elnino2016', 'mjo-lanina2018' or 'mjo-neutral2013'"
@@ -530,7 +566,7 @@ def round_times(ds,freq):
     """
     For dataarray, round the time coordinate to the nearst freq
 
-    Example: aus2200 time values are sometimes very slightly displaced from a 10-minute time step
+    Useful for AUS2200 where time values are sometimes very slightly displaced from a 10-minute time step
     """
 
     #Round the time stamps so that they are easier to work with
@@ -591,10 +627,34 @@ def destagger_aus2200(ds_dict,destag_list,interp_to=None,lsm=None):
 
 def get_weights(x, p=4, q=2, R=5, slope=-1, r=10000):
     """
-    Calculate weights for averaging angles between pixels and coastlines
+    Calculate weights for averaging angles between pixels and coastlines.
+    This function computes weights based on the distance from a coastline, using a piecewise function with different inverse powers before and after a specified distance `R`. The weights smoothly transition at `R` with a specified slope, and are set to zero beyond a cutoff distance `r`.
+    Parameters
+    ----------
+    x : array_like
+        Distance(s) from the coastline.
+    p : float, optional
+        Inverse power to decrease weights after distance `R`. Default is 4.
+    q : float, optional
+        Inverse power to decrease weights before distance `R`. Default is 2.
+    R : float, optional
+        Distance at which the inverse weighting power changes from `p` to `q`. Default is 5.
+    slope : float, optional
+        Slope of the function at point `R`. Default is -1.
+    r : float, optional
+        The distance at which the weights go to zero (to avoid overflows). Default is 10000.
+    Returns
+    -------
+    y : array_like
+        Calculated weights for each input distance.
+    Notes
+    -----
+    The function is based on a method by Ewan Short. 
     
-    Method:
-    x the distance
+    Method
+    -------
+    Continuity and smoothness is ensured at `x = R` by equating the function and its derivative at that point.
+
     Let y1 = m1 * (x / R) ** (-p) for x > R.
     Let y2 = S - m2 * (x / R) ** (q) for x <= R.
     Equate y1 and y2 and their derivative at x = R to get
@@ -602,22 +662,8 @@ def get_weights(x, p=4, q=2, R=5, slope=-1, r=10000):
     slope = -p * m1 = -q * m2 => m1 = -slope/p and m2 = -slope/q
     Thus specifying p, q, R, and the function's slope at x=R determines m1, m2 and S.
 
-    # Inputs
-
-    * x: Distance (array like)
-
-    * p: Inverse power to decrease weights after distance R (float)
-
-    * q: Inverse power to decrease weights before distance R (float)
-
-    * R: Distance (in x) to change inverse weighting power from p to q
-
-    * slope: Slpe of function at point R
-
-    * r: The distance at which the weights go to zero (to avoid overflows)
-
-    From Ewan Short
     """
+
     m1 = -slope/p
     m2 = -slope/q
     S = m1 + m2
@@ -638,39 +684,47 @@ def smooth_angles(angles,sigma):
 
 def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,path_to_load=None,save=False,path_to_save=None,lat_slice=None,lon_slice=None,smooth=False,sigma=4):
 
-    '''
-    Ewan's method with help from Jarrah.
-    
-    Construct a "kernel" for each coastline point based on the angle between that point and all other points in the domain, then take a weighted average. The weighting function can be customised, but is by default an inverse parabola to distance R, then decreases by distance**4. The weights are set to zero at a distance of 2000 km, and are undefined at the coast (where linear interpolation is done to fill in the coastline gaps)
+    """
+    If compute is True, calculate the dominant coastline angle for each point in the domain based on a land-sea mask.
 
-    ## Input
-    * lsm: xarray dataarray with a binary lsm, and lat lon info
+    Otherwise just loads the angles from disk.
 
-    * R: the distance (in km) at which the weighting function is changed from 1/p to 1/q. See get_weights function. Should be approximately 2 times the grid spacing of the lsm
+    If computing, constructs a "kernel" for each point based on the angle between that point and coastline points, then takes a weighted average. The weighting function can be customised, but is by default an inverse parabola to distance R, then decreases by distance**4. The weights are set to zero at a distance of 10,000 km, and are undefined at the coast (where linear interpolation is done to fill in the coastline gaps).
 
-    * coast_dim_chunk_size: the size of the chunks over the coastline dimension
+    Parameters
+    ----------
+    lsm : xarray.DataArray, optional
+        Binary land-sea mask with latitude ("lat") and longitude ("lon") information.
+    R : int, default=20
+        The distance (in km) at which the weighting function is changed from 1/p to 1/q. Around 2 times the grid spacing of the lsm seems appropriate based on initial tests.
+    latlon_chunk_size : int, default=10
+        The size of the chunks over the latitude/longitude dimension for computation.
+    compute : bool, default=True
+        Whether to compute the angles or load from disk.
+    path_to_load : str, optional
+        File path to previous output that can be loaded if compute is False.
+    save : bool, default=False
+        Whether to save the computed angles output if compute is True.
+    path_to_save : str, optional
+        File path to save output if save is True.
+    lat_slice : slice or array-like, optional
+        Latitude indices or values to slice when loading angles from disk.
+    lon_slice : slice or array-like, optional
+        Longitude indices or values to slice when loading angles from disk.
+    smooth : bool, default=False
+        Whether to smooth the interpolated angles output using a Gaussian filter.
+    sigma : float, default=4
+        Sigma value for the Gaussian filter if smoothing.
 
-    * extend_lon: only valid for global data that is periodic in longitude (with lons ranging from -180 to 180). How many pixels to extend the east and west boundary? Noting that pixels at the extreme east/west of the domain could be impacted by coastlines on the opposite boundary. The value given (int) will extend the E/W boundary by as many pixels.
+    Returns
+    -------
+    xarray.Dataset
+        Dataset containing arrays of coastline angles (0-360 degrees from North), as well as an array of angle variance as an estimate of uncertainty. Includes additional fields for coastline mask and minimum distance to the coast.
 
-    * compute: boolean whether or not to actually compute the angles, or just load from disk (in which case path_to_load must be specified)
-
-    * path_to_load: file path to previous output that can be loaded
-
-    * save: boolean - save the angles output?
-
-    * path_to_save: file path to save output
-
-    * lat_slice: if not computing, lats to slice when loading angles from disk
-
-    * lat_slice: if not computing, lons to slice when loading angles from disk
-
-    * smooth: boolean - smooth the interpolated angles output using a gaussian filter. All other output (variance, non-interpolated angles, coastline, min coast distance) is not smoothed
-
-    * sigma: if smoothing, the sigma of the gaussian filter 
-
-    ## Output
-    * An xarray dataset with an array of coastline angles (0-360 degrees from N) for the labelled coastline array, as well as an array of angle variance as an estimate of how many coastlines are influencing a given point
-    '''
+    Notes
+    -----
+    Thank you to Ewan Short and Jarrah Harrison-Lofthouse for help developing this method.
+    """
 
     if save:
         if path_to_save is None:
@@ -871,6 +925,12 @@ def interpolate_angles(angle_ds):
     return angle_ds
 
 def interpolate_variance(angle_ds):
+
+    """
+    From a dataset of coastline variance, interpolate across the coastline.
+
+    This is used because the result of get_coastline_angle_kernel() is not defined along the coastline.
+    """
 
     xx,yy = np.meshgrid(angle_ds.lon,angle_ds.lat)
 

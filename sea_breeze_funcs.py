@@ -31,35 +31,51 @@ def calc_sbi(wind_ds,
                     blh_rolling=0,
                     vert_coord="height"):
 
-    '''
-    Take a xarray dataset of u and v winds, as well as a dataset of coastline angles, and apply the algorithm of Hallgren et al. (2023) to compute the sea breeze index via a single-column method.
+    """
+    Take an xarray dataset of 3d u and v winds, as well as a dataset of coastline angles, and apply the algorithm of Hallgren et al. (2023) to compute the sea breeze index via a single-column method.
 
-    ### Input
-    * wind_ds: An xarray dataset with "u" and "v" wind component variables, and a vertical coordinate "height" in metres
+    The method looks for an onshore flow at a low level (alpha_height) with an opposing, offshore flow aloft. The SBI is calculated for each vertical "aloft" level and then the maximum is taken. "Aloft" levels can be defined either statically (sb_heights) or using all levels below the boundary layer height (blh_da) if providing a dataset of boundary layer heights. 
+    
+    The SBI returns values between 0 and 1, where 1 indicates an onshore flow perpendicular to the coast with an exactly opposing offshore flow aloft. If there is no onshore flow or no opposing offshore flow aloft, the SBI is zero.
 
-    * angle_da: An xarray dataarray of coastline orientation angles (degrees from N) 
+    Parameters
+    ----------
+    wind_ds : xarray.Dataset
+        Dataset containing "u" and "v" wind component variables, with a vertical coordinate (see vert_coord) in metres.
+    angle_da : xarray.DataArray
+        DataArray of coastline orientation angles (degrees from North).
+    vert_coord : str, optional
+        Name of the vertical coordinate in wind_ds.        
+    alpha_height : float, optional
+        Height level in metres to define the "low-level" wind.        
+    height_method : str, optional
+        Method for selecting upper level heights to define aloft levels. Either "static" or "blh". "static" uses static height limits (sb_heights), "blh" uses a DataArray of boundary layer heights (blh_da).
+    blh_da : xarray.DataArray, optional
+        DataArray with boundary layer heights in metres. Used if height_method="blh" to define heights for sea breezes.
+    blh_rolling : int, optional
+        Number of rolling time windows over which to take the maximum boundary layer height. If zero, no rolling max is taken.        
+    sb_heights : list or array-like, optional
+        Bounds [min, max] in metres used to define the upper level sea breeze height if height_method="static".
+    subtract_mean : bool, optional
+        Whether to subtract the mean background wind and calculate perturbation SBI. Uses either the arithmetic mean over a layer (see mean_heights) or the daily mean.
+    height_mean : bool, optional
+        If subtract_mean is True, then whether to subtract the height mean over mean_heights. If False, subtract the daily mean.
+    mean_heights : list or array-like, optional
+        If subtract_mean and height_mean are True, then the bounds [min, max] in metres used to define the layer for mean wind calculation.
 
-    * subtract_mean: Boolean option for whether to subtract the mean background wind, and calculate perturbation sbi and lbi. Currently using an arithmatic mean over mean_heights layer
+    Returns
+    -------
+    xarray.Dataset
+        Dataset containing the sea breeze index (sbi).
 
-    * height_mean: Boolean option to control subtract_mean method. If true, subtract the height mean over mean_heights. Otherwise, subtract the daily mean
+    Notes
+    ----------
+    Options are provided to calculate the SBI using perturbation winds, by subtracting either the daily mean wind or the mean wind over a specified layer. However, this is not recommended as it is uncertain whether this method is valid for perturbation winds. The original method of Hallgren et al. (2023) uses total winds.
 
-    * mean_heights: Array of size (2) that describes the bounds used to mean wind layer. Used if subtract_mean=True
-
-    * blh_da: An xarray dataarray with boundary layer heights, also in m. Used if height_method="blh" to define heights to look for sea/land breezes.
-
-    * alpha_height: Height level in m to define the "low-level" wind
-
-    * sb_heights: Array of size (2) that describes the bounds used to define the upper level sea breeze height. Used if height_method="static"
-
-    * lb_heights: Array of size (2) that describes the bounds used to define the upper level land breeze height. Used if height_method="static"
-
-    * height_method: String used to choose the method for selecting upper level heights to define a circulation. Either "static" or "blh". "static" uses static height limits defined by lb_heights/sb_heights, blh uses the blh_ds.
-
-    * blh_rolling: Integer used to define the number of rolling time windows over which to take the maximum. If zero then no rolling max is taken.
-
-    ### Output
-    * xarray dataset with sbi
-    '''
+    References
+    ----------
+    Hallgren, C., Körnich, H., Ivanell, S., & Sahlée, E. (2023). A Single-Column Method to Identify Sea and Land Breezes in Mesoscale-Resolving NWP Models. Weather and Forecasting, 38(6), 1025-1039. https://doi.org/10.1175/WAF-D-22-0163.1
+    """
 
     #Subtract the mean wind. Define mean as the mean over mean_heights m level, or the daily mean
     if subtract_mean:
@@ -242,16 +258,23 @@ def moisture_flux_gradient(q, u, v, angle_da, lat_chunk="auto", lon_chunk="auto"
 def rotate_wind(u,v,theta):
 
     """
-    Rotate u and v wind components to be cross-shore and along-shore, based on angle of coastline orientation, theta.
+    Rotate u and v wind components to cross-shore and along-shore directions based on coastline orientation.
 
-    ## Input
-    * u: xarray dataarray of u winds in m/s
-    * v: xarray dataarray of v winds in m/s
-    * theta: xarray dataarray of coastline orientation angles from N
+    Parameters
+    ----------
+    u : xarray.DataArray
+        U-component of wind (east-west) in m/s.
+    v : xarray.DataArray
+        V-component of wind (north-south) in m/s.
+    theta : xarray.DataArray
+        Coastline orientation angles from North, in degrees.
 
-    ## Output
-    * uprime: xarray dataarray of wind component parallel to the coast
-    * vprime: xarray dataarray of wind component perpendicular to the coast
+    Returns
+    -------
+    uprime : xarray.DataArray
+        Wind component parallel to the coast (along-shore).
+    vprime : xarray.DataArray
+        Wind component perpendicular to the coast (cross-shore).
     """
 
     #Rotate angle to be perpendicular to theta, from E (i.e. mathamatical angle definition)
@@ -272,25 +295,33 @@ def rotate_wind(u,v,theta):
 def hourly_change(q, t, u, v, angle_da, spatial_dims = ["lat","lon"], spatial_chunks=["auto","auto"]):#lat_chunk="auto", lon_chunk="auto"):
 
     """
-    Calculate hourly changes in q, t, and onshore wind speed. Use thresholds on each to define candidate sea breezes 
+    Calculate hourly changes in specific humidity, temperature, and onshore wind speed.
 
-    ## Input
-    * q: xarray dataarray of specific humidity in kg/kg
+    Parameters
+    ----------
+    q : xarray.DataArray
+        Specific humidity in kg/kg.
+    t : xarray.DataArray
+        Air temperature in degrees Celsius.
+    u : xarray.DataArray
+        U-component of wind in m/s.
+    v : xarray.DataArray
+        V-component of wind in m/s.
+    angle_da : xarray.DataArray
+        Coastline orientation angles.
+    spatial_dims : list of str, optional
+        List of spatial dimensions to chunk. Default is ["lat", "lon"].
+    spatial_chunks : list, optional
+        List of spatial chunk sizes. Default is ["auto", "auto"].
 
-    * t: xarray dataarray of air temperature in degrees
+    Returns
+    -------
+    xarray.Dataset
+        Dataset containing hourly changes in onshore wind speed, specific humidity, and temperature.
 
-    * u: xarray dataarray of u winds in m/s
-
-    * v: xarray dataarray of v winds in m/s
-
-    * angle_da: xarray dataset containing coastline angles ("angle_interp")
-
-    * spatial_dims: list of spatial dimensions to chunk. Default is ["lat","lon"]
-
-    * spatial_chunks: list of spatial chunk sizes. Default is ["auto","auto"]
-
-    ## Output:
-    * xarray dataset
+    Notes
+    -----
+    Data is rechunked in the spatial dimensions with a chunk size of -1 in the time dimension to allow computation of differences.
     """
 
     #Rechunk data in one time dim
@@ -421,21 +452,31 @@ def fuzzy_function_combine(wind_change,q_change,t_change,combine_method="product
 def kinematic_frontogenesis(q,u,v):
 
     """
-    Calculate 2d kinematic frontogenesis, with water vapour mixing ratio
-    Will identify all regions where moisture fronts are increasing/decreasing due to deformation/convergence, including potentially sea breeze fronts
+    Calculate 2D kinematic frontogenesis using water vapour mixing ratio.
 
-    Uses metpy formulation but in numpy/xarray, for efficiency
-    https://github.com/Unidata/MetPy/blob/756ce975eb25d17827924da21d5d77f38a184bd4/src/metpy/calc/kinematics.py#L478
+    Identifies regions where moisture fronts are increasing or decreasing due to flow deformation, including sea breeze fronts.
 
-    Inputs
-    * q: xarray dataarray of water vapour mixing ratio (although this function should work with any scalar). Expects lat/lon/time coordinates in units kg/kg
+    Uses MetPy formulation but implemented with numpy/xarray for efficiency.
+    https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.frontogenesis.html
 
-    * u: as above for a u wind component
-
-    * v: as above for a v wind component
+    Parameters
+    ----------
+    q : xarray.DataArray
+        Water vapour mixing ratio (or any scalar field), with lat/lon/time coordinates in units kg/kg.
+    u : xarray.DataArray
+        U wind component, with matching coordinates.
+    v : xarray.DataArray
+        V wind component, with matching coordinates.
 
     Returns
-    * 2d kinematic frontogenesis in units (g/kg) / 100 km / 3h    """
+    -------
+    xarray.Dataset
+        2D kinematic frontogenesis in units (g/kg) / 100 km / 3h.
+
+    Notes
+    -----
+    The input data is rechunked in lat/lon dimensions for gradient calculations.
+    """
 
     #Rechunk data in one lat and lon dim
     q = q.chunk({"lat":-1,"lon":-1})
@@ -595,7 +636,23 @@ def weighted_vert_mean_wind(wind_ds,mean_heights,p,vert_coord):
 def vert_mean_wind(wind_ds,mean_heights,vert_coord):
 
     """
-    For an xarray dataset with u and v winds, take the vertical mean over some layer.
+    Calculate the vertical mean of u and v wind components over a specified layer.
+
+    Parameters
+    ----------
+    wind_ds : xarray.Dataset
+        Dataset containing 'u' and 'v' wind components.
+    mean_heights : tuple or list of float
+        The lower and upper bounds of the vertical layer over which to compute the mean.
+    vert_coord : str
+        The name of the vertical coordinate in the dataset (e.g., 'height', 'level').
+
+    Returns
+    -------
+    u_mean : xarray.DataArray
+        The vertical mean of the 'u' wind component over the specified layer.
+    v_mean : xarray.DataArray
+        The vertical mean of the 'v' wind component over the specified layer.
     """
 
     u_mean = wind_ds["u"].sel({vert_coord:slice(mean_heights[0],mean_heights[1])}).mean(vert_coord)
@@ -606,7 +663,24 @@ def vert_mean_wind(wind_ds,mean_heights,vert_coord):
 def daily_mean_wind(wind_ds):
 
     """
-    For an xarray dataset with u and v winds, take a rolling daily mean
+    Calculates the rolling daily mean of u and v wind components from an xarray dataset.
+
+    Parameters
+    ----------
+    wind_ds : xarray.Dataset
+        An xarray dataset containing 'u' and 'v' wind components with a 'time' dimension.
+
+    Returns
+    -------
+    u_mean : xarray.DataArray
+        The rolling daily mean of the 'u' wind component.
+    v_mean : xarray.DataArray
+        The rolling daily mean of the 'v' wind component.
+
+    Notes
+    -----
+    The function determines the time step from the dataset and computes the window size for a 24-hour rolling mean.
+    The rolling mean is centered and requires at least half the window size of valid data points.
     """
 
     dt_h = np.round((wind_ds.time.diff("time")[0].values / (1e9 * 60 * 60)).astype(float)).astype(int)
