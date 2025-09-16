@@ -50,5 +50,12 @@ If would like to make changes to improve this code, please reach out or make an 
 ## Citing
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16938245.svg)](https://doi.org/10.5281/zenodo.16938245)
 
+<<<<<<< HEAD
 ## WxSysLib
 This code was developed with funding from the ARC Centre of Excellence for 21st Century Weather. The code is also available in the Centre's [WxSysLib](https://github.com/21centuryweather/WxSysLib/tree/main) repository. However, the version provided here should be considered the most up to date.
+=======
+## Further analysis
+Further analysis of sea breeze objects produced by this code is available in this repository: [https://github.com/andrewbrown31/sea_breeze_analysis](https://github.com/andrewbrown31/sea_breeze_analysis) (currently private, to be made public at a future date)
+
+This analysis is in support of Brown, Vincent and Short (in prep.).
+>>>>>>> b8e238c17ad7d10d7c03b030770a86245c62d2dc
