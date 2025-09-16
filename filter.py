@@ -3,6 +3,7 @@ import pandas as pd
 import warnings
 import argparse
 import os
+import datetime as dt
 
 if __name__ == "__main__":
 
@@ -136,15 +137,19 @@ if __name__ == "__main__":
         t2,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
+        exp_id=exp_id
     )[field_name]
+
+    #Load the hourly change dataset for the temperature, humidity and wind change filters. Note we load an extra hour before t1 to get the change at t1.
     hourly_change_ds = utils.load_diagnostics_time_slice(
         "F_hourly",
         model,
-        t1,
+        (pd.to_datetime(t1)+dt.timedelta(hours=-1)).strftime("%Y-%m-%d %H:%M"),
         t2,
         lat_slice=lat_slice,
         lon_slice=lon_slice,
     )
+    #hourly_change_ds = None
 
     #Load other datasets that can be used for additional filtering
     if "era5" in model:
@@ -167,12 +172,13 @@ if __name__ == "__main__":
         raise ValueError("Model not recognised. Please use era5, barra_r, barra_c or aus2200.")
         
     #Set up output paths
-    props_df_out_path = base_path+\
+    out_path = "/g/data/ng72/ab4502/"
+    props_df_out_path = out_path+\
         "sea_breeze_detection/"+model+"/props_df/props_df_"+filter_name+"_"+\
             field_name+"_"+\
                 pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\
                     pd.to_datetime(t2).strftime("%Y%m%d%H%M")+".csv" 
-    filter_out_path = base_path+\
+    filter_out_path = out_path+\
         "sea_breeze_detection/"+model+"/filters/filtered_mask_"+filter_name+"_"+\
             field_name+"_"+\
                 pd.to_datetime(t1).strftime("%Y%m%d%H%M")+"_"+\

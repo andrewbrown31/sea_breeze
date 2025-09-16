@@ -33,7 +33,7 @@ For calculating the threshold to mask with, the [`percentile`](sea_breeze_filter
 
 ## Example 
 
-An example notebook demonstrating these three steps is available [here](example_notebooks/sea_breeze_detection_example.ipynb). It applies each of the diagnostics and the filter to a day of [AUS2200](https://dx.doi.org/10.25914/w95d-q328) data. This example is intended to run on the Australian NCI Gadi supercomputer, with access to the [ACCESS-NRI conda environment on xp65](https://docs.access-hive.org.au/getting_started/environments/) and [AUS2200 on the bs94 project](https://dx.doi.org/10.25914/w95d-q328).
+An example notebook demonstrating these three steps is available [here](example_notebooks/aus2200_sea_breeze_identification.ipynb). It applies each of the diagnostics and the filter to [AUS2200](https://dx.doi.org/10.25914/w95d-q328) data. This example is intended to run on the Australian NCI Gadi supercomputer, with access to the [ACCESS-NRI conda environment on xp65](https://docs.access-hive.org.au/getting_started/environments/) and [AUS2200 on the bs94 project](https://dx.doi.org/10.25914/w95d-q328).
 
 ## Notes
 
@@ -49,3 +49,6 @@ If would like to make changes to improve this code, please reach out or make an 
 
 ## Citing
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16938245.svg)](https://doi.org/10.5281/zenodo.16938245)
+
+## WxSysLib
+This code was developed with funding from the ARC Centre of Excellence for 21st Century Weather. The code is also available in the Centre's [WxSysLib](https://github.com/21centuryweather/WxSysLib/tree/main) repository. However, the version provided here should be considered the most up to date.

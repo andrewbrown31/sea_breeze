@@ -5,7 +5,6 @@ import pandas as pd
 import datetime as dt
 import metpy.calc as mpcalc
 from skimage.segmentation import find_boundaries
-#import xesmf as xe
 import dask.array as da
 import scipy
 from dask.distributed import progress
@@ -69,18 +68,41 @@ def load_era5_ml_and_interp(t1,t2,lat_slice,lon_slice,
                             heights=np.arange(0,4600,100),chunks={"time":"auto","hybrid":-1}):
 
     """
-    ## Load in ERA5 data that was downladed from the Google cloud. That includes u and v wind components as well as geopotential height. Then, interpolate from model levels to height levels.
-    I have tried to name the downloaded files systematically using the same monthly notation as in the rt52 project, however the paths can also be manually specified as lists (expecting one file for each variable)
+    Load ERA5 model level data downloaded from Google Cloud, including u and v wind components and geopotential height.
+    Interpolate from model levels to specified height levels.
 
-    t1: start time in %Y-%m-%d %H:%M"
-    t1: end time in %Y-%m-%d %H:%M"
-    lat_slice: a slice to restrict lat domain
-    lon_slice: a slice to restrict lon domain    
-    upaths: an array of paths for u data. if none use time and look in ng72 dir
-    vpaths: an array of paths for v data. if none use time and look in ng72 dir
-    zpaths: an array of paths for z data. if none use time and look in ng72 dir    
-    heights: to interpolate to (in metres)
-    chunks: dict describing the number of chunks. see xr.open_dataset
+    Parameters
+    ----------
+    t1 : str
+        Start time in "%Y-%m-%d %H:%M".
+    t2 : str
+        End time in "%Y-%m-%d %H:%M".
+    lat_slice : slice or array-like
+        Slice or indices to restrict latitude domain.
+    lon_slice : slice or array-like
+        Slice or indices to restrict longitude domain.
+    upaths : list of str, optional
+        List of file paths for u-component wind data. If None, paths are constructed automatically based on where the data was saved on /g/data/ng72.
+    vpaths : list of str, optional
+        List of file paths for v-component wind data. If None, paths are constructed automatically based on where the data was saved on /g/data/ng72.
+    zpaths : list of str, optional
+        List of file paths for geopotential data. If None, paths are constructed automatically based on where the data was saved on /g/data/ng72.
+    heights : numpy.ndarray, optional
+        Array of target height levels (in metres) to interpolate to. Default is np.arange(0,4600,100).
+    chunks : dict, optional
+        Dictionary describing chunk sizes for xarray open_dataset. Default is {"time":"auto","hybrid":-1}.
+
+    Returns
+    -------
+    interp_era5 : xarray.Dataset
+        Dataset containing u and v wind components interpolated to specified height levels.
+    lsm : xarray.DataArray
+        Land-sea mask.
+
+    Notes
+    -----
+    - Downloaded files are expected to follow a systematic monthly naming convention, but paths can be manually specified.
+    - If file paths are not provided, they are constructed based on time and searched in the ng72 directory.
     """
 
     #Load ERA5 model level data downloaded from ERA5
@@ -118,19 +140,29 @@ def load_era5_ml_and_interp(t1,t2,lat_slice,lon_slice,
 
 def load_era5_variable(vnames,t1,t2,lon_slice,lat_slice,chunks="auto"):
 
-    '''
-    Load era5 data using the NCI intake catalog
+    """
+    Load ERA5 data using the NCI intake catalog.
 
-    Input
-    vname: list of names of era5 variables
-    t1: start time in %Y-%m-%d %H:%M"
-    t1: end time in %Y-%m-%d %H:%M"
-    lat_slice: a slice to restrict lat domain
-    lon_slice: a slice to restrict lon domain
+    Parameters
+    ----------
+    vnames : list of str
+        List of ERA5 variable names to load.
+    t1 : str
+        Start time in "%Y-%m-%d %H:%M".
+    t2 : str
+        End time in "%Y-%m-%d %H:%M".
+    lat_slice : slice or array-like
+        Slice or indices to restrict latitude domain.
+    lon_slice : slice or array-like
+        Slice or indices to restrict longitude domain.
+    chunks : dict or str, optional
+        Chunking for xarray open_mfdataset (default is "auto").
 
-    Output:
-    xarray dataset
-    '''
+    Returns
+    -------
+    dict of xarray.Dataset
+        Dictionary of datasets for each requested variable.
+    """
 
     #Set up times to search within catalog
     data_catalog = get_intake_cat_era5()
@@ -154,18 +186,41 @@ def load_era5_variable(vnames,t1,t2,lon_slice,lat_slice,chunks="auto"):
         
     return out
 
-def load_era5_static(lon_slice,lat_slice,t1,t2,chunks="auto"):
+def load_era5_static(lon_slice, lat_slice, t1, t2, chunks="auto"):
+    """
+    Load ERA5 static variables (orography, land-sea mask, lake mask) for a specified spatial and temporal domain.
 
-    '''
-    For ERA5, load static variables using the first time step of the period.
-    Also flip the latitude coord and convert -180-180 lons to 0-360 (for consistency with BARRA)
-    lat_slice: a slice to restrict lat domain
-    lon_slice: a slice to restrict lon domain
-    t1: start time in %Y-%m-%d %H:%M"
-    t1: end time in %Y-%m-%d %H:%M"
+    This function retrieves static variables from the ERA5 dataset using the first time step of the specified period.
+    It flips the latitude coordinate and converts longitudes from the -180 to 180 range to 0 to 360 for consistency.
+    The function returns orography, a binary land-sea mask, and a binary lake mask.
 
-    Returns orography, binary land sea mask, and binary lake mask
-    '''
+    Parameters
+    ----------
+    lon_slice : slice
+        Slice object to restrict the longitude domain.
+    lat_slice : slice
+        Slice object to restrict the latitude domain.
+    t1 : str
+        Start time in "%Y-%m-%d %H:%M" format.
+    t2 : str
+        End time in "%Y-%m-%d %H:%M" format.
+    chunks : str or dict, optional
+        Chunking strategy for dask arrays (default is "auto").
+
+    Returns
+    -------
+    orog : xarray.DataArray
+        Orography (surface elevation) data.
+    lsm : xarray.DataArray
+        Binary land-sea mask (1 for land, 0 for sea).
+    cl : xarray.DataArray
+        Binary lake mask.
+
+    Notes
+    -----
+    - Latitude is flipped and longitude is converted to 0-360 for consistency with BARRA dataset conventions.
+    - Only the first time step of the period is used for static variables.
+    """
 
     data_catalog = get_intake_cat_era5()
     time_starts = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m%d").astype(int).values
@@ -203,13 +258,29 @@ def remove_era5_inland_lakes(lsm,cl):
 
 def load_era5_ml(path,t1,t2,lat_slice,lon_slice,chunks={"time":"auto","hybrid":-1}):
 
-    '''
-    Load ERA5 model level data, as downloaded from the Google cloud and stored on ng72 (using era5_download_google.ipynb)
-    t1: start time in %Y-%m-%d %H:%M"
-    t1: end time in %Y-%m-%d %H:%M"
-    lat_slice: a slice to restrict lat domain
-    lon_slice: a slice to restrict lon domain    
-    '''
+    """
+    Load ERA5 model level data, as downloaded from the Google cloud and stored on ng72.
+
+    Parameters
+    ----------
+    path : str
+        File path to the ERA5 model level data.
+    t1 : str
+        Start time in "%Y-%m-%d %H:%M".
+    t2 : str
+        End time in "%Y-%m-%d %H:%M".
+    lat_slice : slice or array-like
+        Slice or indices to restrict latitude domain.
+    lon_slice : slice or array-like
+        Slice or indices to restrict longitude domain.
+    chunks : dict, optional
+        Chunking for xarray open_dataset (default is {"time":"auto","hybrid":-1}).
+
+    Returns
+    -------
+    xarray.Dataset
+        ERA5 model level data for the specified time and spatial domain.
+    """
 
     if ("lat" in chunks.keys()) | ("lon" in chunks.keys()):
         print("WARNING: LAT OR LON IN CHUNKS IS BEING IGNORED, SHOULD BE LATITUDE OR LONGITUDE...")
@@ -229,7 +300,7 @@ def era5_sfc_moisture(era5_vars):
 
     """
     From a dict of ERA5 variables, calculate specific humidity and thetae
-    Assumes era5_vars contains "sp", "2d", and "2t"
+    Assumes era5_vars is a dict with keys "sp", "2d", and "2t" and values that contain xarray datasets
     """
 
     era5_vars["q"] = mpcalc.mixing_ratio_from_specific_humidity(
@@ -263,19 +334,40 @@ def get_intake_cat_era5():
 
 def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, chunks="auto", smooth=False, sigma=2, smooth_axes=None):
 
-    '''
-    vnames: name of barra variables
-    t1: start time in %Y-%m-%d %H:%M"
-    t2: end time in %Y-%m-%d %H:%M"
-    domain_id: for barra, either AUS-04 or AUST-11
-    freq: frequency string (e.g. 1h)
-    lat_slice: a slice to restrict lat domain
-    lon_slice: a slice to restrict lon domain
-    chunks: dict describing the number of chunks. see xr.open_dataset
-    smooth: boolean - smooth the data using a gaussian filter
-    sigma: if smoothing, the sigma of the gaussian filter
-    smooth_axes: if smoothing, the axes to smooth over, as an iterable
-    '''
+    """
+    Load a variable from the BARRA dataset.
+
+    Parameters
+    ----------
+    vname : str
+        Name of BARRA variable to load.
+    t1 : str
+        Start time in "%Y-%m-%d %H:%M".
+    t2 : str
+        End time in "%Y-%m-%d %H:%M".
+    domain_id : str
+        BARRA domain, either "AUS-04", "AUST-11" or "AUS-11".
+    freq : str
+        Frequency string (e.g., "1h").
+    lat_slice : slice or array-like
+        Slice or indices to restrict latitude domain.
+    lon_slice : slice or array-like
+        Slice or indices to restrict longitude domain.
+    chunks : dict or str, optional
+        Chunking for xarray open_mfdataset (default is "auto").
+    smooth : bool, optional
+        If True, smooth the data using a Gaussian filter.
+    sigma : float, optional
+        Sigma value for the Gaussian filter if smoothing.
+    smooth_axes : iterable, optional
+        Axes to smooth over if smoothing.
+
+    Returns
+    -------
+    da : xarray.DataArray
+        The requested variable, optionally smoothed.
+
+    """
 
     if domain_id in ["AUST-04"]:
         model = "BARRA-C2"
@@ -285,7 +377,8 @@ def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, ch
         raise ValueError("Invalid domain id")
 
     #data_catalog = get_intake_cat_barra()
-    times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
+    #times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
+    times = np.unique(pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="h",inclusive="both").strftime("%Y%m").astype(int).values)
     files = [glob.glob("/g/data/ob53/BARRA2/output/reanalysis/"\
                     +domain_id+"/BOM/ERA5/historical/hres/"+model+\
                         "/v1/"+freq+"/"+vname+"/latest/"+\
@@ -325,12 +418,25 @@ def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, ch
 
 def load_barra_static(domain_id,lon_slice,lat_slice):
 
-    '''
-    For a barra domain, load static variables
-    domain_id: for barra, either AUS-04 or AUST-11
-    lat_slice: a slice to restrict lat domain
-    lon_slice: a slice to restrict lon domain
-    '''
+    """
+    Load static variables for a BARRA domain.
+
+    Parameters
+    ----------
+    domain_id : str
+        Identifier for the BARRA domain. Accepted values are "AUST-04", "AUST-11", or "AUS-11".
+    lon_slice : slice
+        Slice object to restrict the longitude domain.
+    lat_slice : slice
+        Slice object to restrict the latitude domain.
+
+    Returns
+    -------
+    orog : xarray.DataArray
+        Orography data for the specified domain and region.
+    lsm : xarray.DataArray
+        Land-sea mask for the specified domain and region, where land is represented by 1 and sea by 0.
+    """
 
     # data_catalog = get_intake_cat_barra()
     # orog = data_catalog.search(variable_id="orog",domain_id=domain_id).to_dask().sel(lon=lon_slice, lat=lat_slice)
@@ -359,8 +465,7 @@ def load_barra_static(domain_id,lon_slice,lat_slice):
 def barra_sfc_moisture(huss,ps,tas):
 
     """
-    From a dict of BARRA variables, calculate specific humidity, dewpoint, and theta-e
-    Assumes barra_vars contains "huss", "ps", and "tas"
+    Calculate specific humidity, dewpoint, and theta-e from BARRA surface variables.
     """
 
     q = mpcalc.mixing_ratio_from_specific_humidity(huss)
@@ -591,39 +696,6 @@ def interp_times(da,interp_times,method="linear",lower_bound=None):
         da = xr.where(da < lower_bound, lower_bound, da)
         
     return da
-
-def destagger_aus2200(ds_dict,destag_list,interp_to=None,lsm=None):
-
-    """
-    
-    From a dictionary of aus2200 datasets (output from load_aus2200_variable), destagger variables in destag_list by interpolating
-    
-    ## Input
-    * ds_dict: a dictionary of aus2200 xarray datasets. output from load_aus2200_variable()
-
-    * destag_list: list of variables to destagger
-
-    * interp_to: variable for which to use spatial info to interp onto
-
-    * lsm: land sea mask dataset to interp on to
-
-    ## Output
-    a dictionary of datasets with destaggered variables
-
-    ## Example
-    destagger_aus2200(ds_dict, ["uas","vas"], "hus")
-
-    """
-
-    for vars in destag_list:
-        if interp_to is not None:
-            ds_dict[vars] = ds_dict[vars].interp({"lon":ds_dict[interp_to].lon,"lat":ds_dict[interp_to].lat},method="linear")
-        elif lsm is not None:
-            ds_dict[vars] = ds_dict[vars].interp({"lon":lsm.lon,"lat":lsm.lat},method="linear")
-        else:
-            raise Exception("Need to input either a variable to interp to, or a land sea mask, to get spatial info")
-        
-    return ds_dict
 
 def get_weights(x, p=4, q=2, R=5, slope=-1, r=10000):
     """

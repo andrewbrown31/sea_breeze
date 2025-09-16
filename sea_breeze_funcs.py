@@ -526,7 +526,7 @@ def kinematic_frontogenesis(q,u,v):
         long_name = "Moisture frontogenesis",
         description = "2d kinematic moisture frontogenesis parameter.")  
 
-    return xr.Dataset({"F":F})
+    return out
 
 def coast_relative_frontogenesis(q,u,v,angle_da):
 
