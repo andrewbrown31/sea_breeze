@@ -48,7 +48,7 @@ An example notebook demonstrating these three steps is available [here](example_
 If would like to make changes to improve this code, please reach out or make an issue!
 
 ## Citing
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16938245.svg)](https://doi.org/10.5281/zenodo.16938245)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16938245.svg)](https://doi.org/10.5281/zenodo.17220916)
 
 ## WxSysLib
 This code was developed with funding from the ARC Centre of Excellence for 21st Century Weather. The code is also available in the Centre's [WxSysLib](https://github.com/21centuryweather/WxSysLib/tree/main) repository. However, the version provided here should be considered the most up to date.
