@@ -35,7 +35,7 @@ if __name__ == "__main__":
     parser.add_argument("--temperature_change_filter",default=False,action=argparse.BooleanOptionalAction,help="Whether to apply the temperature change filter. Default is False")
     parser.add_argument("--humidity_change_filter",default=False,action=argparse.BooleanOptionalAction,help="Whether to apply the humidity change filter. Default is False")
     parser.add_argument("--wind_change_filter",default=False,action=argparse.BooleanOptionalAction,help="Whether to apply the wind change filter. Default is False")
-    parser.add_argument("--propagation_speed_filter",default=True,action=argparse.BooleanOptionalAction,help="Whether to apply the propagation speed filter. Default is False")
+    parser.add_argument("--onshore_wind_filter",default=True,action=argparse.BooleanOptionalAction,help="Whether to apply the onshore wind filter. Default is True")
     parser.add_argument("--dist_to_coast_filter",default=False,action=argparse.BooleanOptionalAction,help="Whether to apply the distance to coast filter. Default is False")
     parser.add_argument("--output_land_sea_temperature_diff",default=False,action=argparse.BooleanOptionalAction,help="Whether to output the land sea temperature difference. Default is False")
     parser.add_argument("--time_filter",default=False,action=argparse.BooleanOptionalAction,help="Whether to apply the time filter. Default is False")
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("--area_thresh_pixels",default=12,type=int,help="Area threshold in pixels for the area filter. Default is 12")
     parser.add_argument("--aspect_thresh",default=2,type=float,help="Aspect threshold for the aspect filter. Default is 2")
     parser.add_argument("--land_sea_temperature_diff_thresh",default=0,type=float,help="Land sea temperature difference threshold for the land sea temperature filter. Default is 0")
-    parser.add_argument("--propagation_speed_thresh",default=0,type=float,help="Propagation speed threshold for the propagation speed filter. Default is 0")
+    parser.add_argument("--onshore_wind_thresh",default=0,type=float,help="Onshore wind threshold for the onshore wind filter. Default is 0")
     args = parser.parse_args()
 
     #Set up dask client
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     temperature_change_filter = args.temperature_change_filter
     humidity_change_filter = args.humidity_change_filter
     wind_change_filter = args.wind_change_filter
-    propagation_speed_filter = args.propagation_speed_filter
+    onshore_wind_filter = args.onshore_wind_filter
     dist_to_coast_filter = args.dist_to_coast_filter
     output_land_sea_temperature_diff = args.output_land_sea_temperature_diff
     time_filter = args.time_filter
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     area_thresh_pixels = args.area_thresh_pixels
     aspect_thresh = args.aspect_thresh
     land_sea_temperature_diff_thresh = args.land_sea_temperature_diff_thresh
-    propagation_speed_thresh = args.propagation_speed_thresh
+    onshore_wind_thresh = args.onshore_wind_thresh
 
     #Set up lat/lon slices
     lat_slice = slice(lat1,lat2)
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         "temperature_change_filter":temperature_change_filter,
         "humidity_change_filter":humidity_change_filter,
         "wind_change_filter":wind_change_filter,
-        "propagation_speed_filter":propagation_speed_filter,
+        "onshore_wind_filter":onshore_wind_filter,
         "dist_to_coast_filter":dist_to_coast_filter,
         "output_land_sea_temperature_diff":output_land_sea_temperature_diff,        
         "time_filter":time_filter,
@@ -115,7 +115,7 @@ if __name__ == "__main__":
         "area_thresh_pixels":area_thresh_pixels,
         "aspect_thresh":aspect_thresh,
         "land_sea_temperature_diff_thresh":land_sea_temperature_diff_thresh,
-        "propagation_speed_thresh":propagation_speed_thresh,
+        "onshore_wind_thresh":onshore_wind_thresh,
         }
 
     #Load sea breeze diagnostics
