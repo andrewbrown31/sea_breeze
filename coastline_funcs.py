@@ -6,7 +6,6 @@ from skimage.segmentation import find_boundaries, flood, expand_labels
 import skimage.measure as measure
 import skimage.morphology as morphology
 import dask.array as da
-from dask.distributed import progress
 
 def latlon_dist(lat, lon, lats, lons):
 

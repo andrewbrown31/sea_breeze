@@ -1,7 +1,6 @@
 import numpy as np
 import metpy.calc as mpcalc
 import xarray as xr
-#import xesmf as xe
 import skimage
 import glob
 from sea_breeze import load_model_data, sea_breeze_funcs

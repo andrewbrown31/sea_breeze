@@ -7,7 +7,6 @@ import zipfile
 import glob
 import pyproj
 import cartopy.crs as ccrs
-import pint_xarray
 import pandas as pd
 import tqdm
 

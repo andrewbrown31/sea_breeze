@@ -1,6 +1,6 @@
 # Sea breeze detection
 
-This repository has code that is intended to detect sea breezes from numerical weather model output. The code relies on xarray/dask, numpy, scipy, metpy, scikit-image, pyproj and pandas. The code is organised into three sequential steps:
+This repository has code that is intended to detect sea breezes from numerical weather model output. The code relies on packages including xarray/dask, scipy, metpy, scikit-image, pyproj and pandas (see [requirements](#requirements)). The code is organised into three sequential steps:
 
 1) [Pre-processing model data](#pre-processing-model-data)
 2) [Calculating sea breeze diagnostics](#sea-breeze-diagnostics)
@@ -43,6 +43,21 @@ An example notebook demonstrating these three steps is available [here](example_
 
 * There are a variety of settings in the filtering script, and it is noted that the `land_sea_temperature_filter` currently causes significant slowdown due to radial searching around sea breeze objects.
 
+## Requirements
+The code was devloped on the [`analysis3-25.06` conda environment](https://docs.access-hive.org.au/getting_started/environments/) through the `xp65` NCI project. This code builds on the following packages:
+* metpy
+* xarray
+* dask
+* pyproj
+* scipy
+* skimage
+* pandas
+* numpy
+* cartopy
+
+In addition, for loading ERA5 data hosted on the NCI within the `load_model_data.py` module, the following packages are required:
+* [intake](https://docs.access-hive.org.au/model_evaluation/data/model_catalogs/)
+
 ## Contributing
 
 If would like to make changes to improve this code, please reach out or make an issue!
@@ -51,4 +66,4 @@ If would like to make changes to improve this code, please reach out or make an 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16938245.svg)](https://doi.org/10.5281/zenodo.17220916)
 
 ## WxSysLib
-This code was developed with funding from the ARC Centre of Excellence for 21st Century Weather. The code is also available in the Centre's [WxSysLib](https://github.com/21centuryweather/WxSysLib/tree/main) repository. However, the version provided here should be considered the most up to date.
+This code was developed with funding from the ARC Centre of Excellence for 21st Century Weather. The code is also available in the Centre's [WxSysLib](https://github.com/21centuryweather/WxSysLib/tree/main/utils/diagnostics/sea_breeze) repository. However, the version provided here should be considered the most up to date.
