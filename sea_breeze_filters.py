@@ -1,7 +1,6 @@
 import scipy.ndimage
 import skimage
 import scipy
-import tqdm
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -10,7 +9,6 @@ import metpy.calc as mpcalc
 import dask.array as da
 from sea_breeze import utils
 import os
-from dask.distributed import progress
 import logging
 
 class Mask_Options:
@@ -568,7 +566,6 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
         print("INFO: Computing "+str(p)+"th percentile from field...")
         thresh = percentile(field,p=p,skipna=skipna)
         thresh = thresh.compute()
-        progress(thresh)
         print("Using threshold: ",str(thresh))
     elif threshold=="fixed":
         if threshold_value is not None:
@@ -641,8 +638,7 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
         if output_chunks is None:
             mask_save = filtered_mask.to_zarr(filter_out_path,compute=False,mode="w")
         else:
-            mask_save = filtered_mask.chunk(output_chunks).to_zarr(filter_out_path,compute=False,mode="w")
-        progress(mask_save.persist())
+            mask_save = filtered_mask.chunk(output_chunks).to_zarr(filter_out_path,compute=False,mode="w").persist()
     
     return filtered_mask
 

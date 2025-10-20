@@ -1,4 +1,3 @@
-import intake
 import xarray as xr
 import numpy as np
 import pandas as pd
@@ -7,7 +6,6 @@ import metpy.calc as mpcalc
 from skimage.segmentation import find_boundaries
 import dask.array as da
 import scipy
-from dask.distributed import progress
 import pyproj
 import warnings
 import glob
@@ -317,6 +315,7 @@ def get_intake_cat_barra():
     '''
 
     #See here: https://opus.nci.org.au/pages/viewpage.action?pageId=264241965
+    import intake
     data_catalog = intake.open_esm_datastore("/g/data/ob53/catalog/v2/esm/catalog.json")
 
     return data_catalog
@@ -328,6 +327,7 @@ def get_intake_cat_era5():
     '''
 
     #See here: https://opus.nci.org.au/pages/viewpage.action?pageId=264241965
+    import intake
     data_catalog = intake.open_esm_datastore("/g/data/rt52/catalog/v2/esm/catalog.json")
 
     return data_catalog
@@ -860,7 +860,6 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
         #Take the weighted mean and convert complex numbers to an angle and magnitude
         print("INFO: Take the weighted mean and convert complex numbers to an angle and magnitude...")
         mean_angles = da.mean((weights*stack), axis=0).persist()
-        progress(mean_angles)
         mean_abs = da.abs(mean_angles)
         mean_angles = da.angle(mean_angles)    
 
@@ -870,10 +869,8 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
         #Calculate the weighted circular variance
         print("INFO: Calculating the sum of the weights...")
         total_weight = da.sum(weights, axis=0).persist()
-        progress(total_weight)
         print("INFO: Calculating variance...")
         variance = (1 - da.abs(da.sum( (weights/total_weight) * (stack / stack_abs), axis=0))).persist()
-        progress(variance)
         del stack, weights, total_weight 
 
         #Calculate minimum distance to the coast
