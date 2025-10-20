@@ -41,7 +41,7 @@ def calc_sbi(wind_ds,
     Parameters
     ----------
     wind_ds : xarray.Dataset
-        Dataset containing "u" and "v" wind component variables, with a vertical coordinate (see vert_coord) in metres.
+        Dataset containing "u" and "v" wind component variables, with a vertical coordinate (see vert_coord) in metres. The Dataset should be chunked for Dask compatibility.
     angle_da : xarray.DataArray
         DataArray of coastline orientation angles (degrees from North).
     vert_coord : str, optional
