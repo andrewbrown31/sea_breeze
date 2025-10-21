@@ -9,6 +9,7 @@ import scipy
 import pyproj
 import warnings
 import glob
+from scipy.spatial import KDTree
 
 def interp_scipy(x, xp, fp):
     f = scipy.interpolate.interp1d(xp, fp, kind="linear", fill_value="extrapolate")
@@ -754,14 +755,16 @@ def smooth_angles(angles,sigma):
     z = np.rad2deg(np.angle(scipy.ndimage.gaussian_filter(z, sigma))) % 360
     return xr.DataArray(z,dims=angles.dims,coords=angles.coords)
 
-def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,path_to_load=None,save=False,path_to_save=None,lat_slice=None,lon_slice=None,smooth=False,sigma=4):
+def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,k=0,compute=True,path_to_load=None,save=False,path_to_save=None,lat_slice=None,lon_slice=None,smooth=False,sigma=4):
 
     """
     If compute is True, calculate the dominant coastline angle for each point in the domain based on a land-sea mask.
 
     Otherwise just loads the angles from disk.
 
-    If computing, constructs a "kernel" for each point based on the angle between that point and coastline points, then takes a weighted average. The weighting function can be customised, but is by default an inverse parabola to distance R, then decreases by distance**4. The weights are set to zero at a distance of 10,000 km, and are undefined at the coast (where linear interpolation is done to fill in the coastline gaps).
+    If computing, constructs a "kernel" for each point based on the angle between that point and coastline points, then takes a weighted average. There is an option to restrict the kernel to only the k nearest coastline points to reduce memory usage (see k parameter).
+     
+    The weighting function can be customised, but is by default an inverse parabola to distance R, then decreases by distance**4. The weights are set to zero at a distance of 10,000 km, and are undefined at the coast (where linear interpolation is done to fill in the coastline gaps).
 
     Parameters
     ----------
@@ -771,6 +774,8 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
         The distance (in km) at which the weighting function is changed from 1/p to 1/q. Around 2 times the grid spacing of the lsm seems appropriate based on initial tests.
     latlon_chunk_size : int, default=10
         The size of the chunks over the latitude/longitude dimension for computation.
+    k : int, default=0
+        The number of nearest coastline points to use for each point in the domain. If k=0, then all coastline points are used (memory intensive). If k is None, then a reasonablely large k is chosen based on grid spacing.
     compute : bool, default=True
         Whether to compute the angles or load from disk.
     path_to_load : str, optional
@@ -819,18 +824,46 @@ def get_coastline_angle_kernel(lsm=None,R=20,latlon_chunk_size=10,compute=True,p
         xx = xx.astype(np.float32)
         yy = yy.astype(np.float32)    
 
-        #Define coastline x,y indices from the coastline mask
-        xl, yl = np.where(coast_label)
+        if k == 0:
+            #If k is 0 then use all coastline points. This is memory intensive but accurate. Creates complex arrays of shape (n_coast_points, n_lat, n_lon)
 
-        #Get coastline lat lon vectors
-        yy_t = np.array([yy[xl[t],yl[t]] for t in np.arange(len(yl))])
-        xx_t = np.array([xx[xl[t],yl[t]] for t in np.arange(len(xl))])
+            #Define coastline x,y indices from the coastline mask
+            xl, yl = np.where(coast_label)
 
-        #Repeat the 2d lat lon array over a third dimension (corresponding to the coast dim). Also repeat the yy_t and xx_t vectors over the spatial arrays
-        yy_rep = da.moveaxis(da.stack([da.from_array(yy)]*yl.shape[0],axis=0),0,-1).rechunk({0:-1,1:-1,2:latlon_chunk_size})
-        xx_rep = da.moveaxis(da.stack([da.from_array(xx)]*xl.shape[0],axis=0),0,-1).rechunk({0:-1,1:-1,2:latlon_chunk_size})
-        xx_t_rep = (xx_rep * 0) + xx_t
-        yy_t_rep = (yy_rep * 0) + yy_t
+            #Get coastline lat lon vectors
+            yy_t = np.array([yy[xl[t],yl[t]] for t in np.arange(len(yl))])
+            xx_t = np.array([xx[xl[t],yl[t]] for t in np.arange(len(xl))])
+
+            #Repeat the 2d lat lon array over a third dimension (corresponding to the coast dim). Also repeat the yy_t and xx_t vectors over the spatial arrays
+            yy_rep = da.moveaxis(da.stack([da.from_array(yy)]*yl.shape[0],axis=0),0,-1).rechunk({0:-1,1:-1,2:latlon_chunk_size})
+            xx_rep = da.moveaxis(da.stack([da.from_array(xx)]*xl.shape[0],axis=0),0,-1).rechunk({0:-1,1:-1,2:latlon_chunk_size})
+            xx_t_rep = (xx_rep * 0) + xx_t
+            yy_t_rep = (yy_rep * 0) + yy_t
+
+        else:
+            #If k is not 0, then only use the k nearest coastline points to each point in the domain. 
+            #If k is not provided, then choose a reasonably large k based on grid spacing (based on k=1000 for a 0.25 degree grid). This
+            # choice of k was tested on ERA5 grid spacing and found to give similar results to using all coastline points, except where coastline variance is large
+
+            if k is None:
+                dx = np.abs(lon[1]-lon[0]) * 100 #Approx km per degree at equator
+                k = int(1000 * (25/dx))
+
+            #Define coastline lat lon points from the coastline mask and define NN lookup
+            coast_x, coast_y = np.where(coast_label)
+            coast_lon = lon[coast_y]
+            coast_lat = lat[coast_x]
+            coast_X = np.array([coast_lat, coast_lon]).T
+            coast_kdt = scipy.spatial.KDTree(coast_X)
+            _,coast_ind = coast_kdt.query(np.array([yy.flatten(),xx.flatten()]).T, k)
+            target_lon_coast = coast_lon[coast_ind.reshape((lat.shape[0],lon.shape[0])+(k,))]
+            target_lat_coast = coast_lat[coast_ind.reshape((lat.shape[0],lon.shape[0])+(k,))]        
+
+            #Repeat the 2d lat lon array k times.
+            yy_rep = da.moveaxis(da.stack([da.from_array(yy)]*k,axis=0),0,-1).rechunk({0:-1,1:-1,2:latlon_chunk_size})
+            xx_rep = da.moveaxis(da.stack([da.from_array(xx)]*k,axis=0),0,-1).rechunk({0:-1,1:-1,2:latlon_chunk_size})
+            xx_t_rep = da.array(target_lon_coast).rechunk({0:-1,1:-1,2:latlon_chunk_size})
+            yy_t_rep = da.array(target_lat_coast).rechunk({0:-1,1:-1,2:latlon_chunk_size})        
 
         #Calculate the distance and angle between coastal points and all other points using pyproj, then convert to complex space.
         geod = pyproj.Geod(ellps="WGS84")
