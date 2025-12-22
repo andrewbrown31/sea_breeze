@@ -2,9 +2,14 @@
 
 This repository has code that is intended to detect sea breezes from numerical weather model output. The code relies on packages including xarray/dask, scipy, metpy, scikit-image, pyproj and pandas (see [requirements](#requirements)). 
 
-Contents
+Contents:
 * [Code structure](#code-structure)
+    * [Pre-processing model data](#pre-processing-model-data)
+    * [Sea breeze diagnostics](#sea-breeze-diagnostics)
+    * [Object identification and filtering](#sea-breeze-filtering)
 * [Examples](#examples)
+    * [Local example](#local-example)
+    * [On the gadi HPC system](#on-the-gadi-hpc-system)
 * [Requirements](#requirements)
 * [Contributing](#contributing)
 * [Citing](#citing)
@@ -69,10 +74,11 @@ The code was devloped on the [`analysis3-25.06` conda environment](https://docs.
 * scipy                                   1.15.2
 * xarray                                  2025.4.0
 * netCDF4                                 1.7.2 
+* zarr                                    2.18.7
 
-An minimum working environment can be build using conda:
+For running the [local example](#local-example), a minimum working environment can be build using conda:
 ```
-conda create -n sea_breeze_env -c conda-forge cartopy=0.24.0 dask=2025.5.1 metpy=1.7.0 numpy=1.26.4 pandas=2.2.3 pyproj=3.6.1 scikit-image=0.25.2 scipy=1.15.2 xarray=2025.4.0 netCDF4=1.7.2
+conda create -n sea_breeze_env -c conda-forge cartopy=0.24.0 dask=2025.5.1 metpy=1.7.0 numpy=1.26.4 pandas=2.2.3 pyproj=3.6.1 scikit-image=0.25.2 scipy=1.15.2 xarray=2025.4.0 netCDF4=1.7.2 zarr=2.18.7
 ```
 
 In addition, for loading ERA5 data hosted on the NCI within the `load_model_data.py` module, the following packages are required:
