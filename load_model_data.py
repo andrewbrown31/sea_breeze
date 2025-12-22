@@ -1077,6 +1077,14 @@ def aus2200_hybrid_height_calc(height_coord="rho"):
             0.2872708E+00,   0.3045112E+00,   0.3240212E+00,   0.3462124E+00,   0.3715503E+00,
             0.4005586E+00,   0.4338236E+00,   0.4719992E+00,   0.5158110E+00,   0.5660614E+00,
             0.6236348E+00,   0.6895022E+00,   0.7647274E+00,   0.8504717E+00,   0.9480625E+00])
+        
+        #Load the atmosphere_hybrid_height_coordinate variable as levs
+        var = xr.open_dataset(
+            "/g/data/bs94/AUS2200/mjo-neutral2013/v1-0/1hr/ua/ua_AUS2200_mjo-neutral_1hrPt_201303011900-201303020000.nc",
+            chunks={"lev": -1, "lat": {}, "lon": {}}
+        )["ua"]
+        levs = var.lev.values
+
     elif height_coord == "theta":
         eta=np.array([0.0000000E+00,   0.1250000E-03,   0.5416666E-03,   0.1125000E-02,   0.1875000E-02,
             0.2791667E-02,   0.3875000E-02,   0.5125000E-02,   0.6541667E-02,   0.8125000E-02,
@@ -1093,15 +1101,16 @@ def aus2200_hybrid_height_calc(height_coord="rho"):
             0.3850676E+00,   0.4160496E+00,   0.4515977E+00,   0.4924007E+00,   0.5392213E+00,
             0.5929016E+00,   0.6543679E+00,   0.7246365E+00,   0.8048183E+00,   0.8961251E+00,
             0.1000000E+01])
+
+        #Load the atmosphere_hybrid_height_coordinate variable as levs
+        var = xr.open_dataset(
+            "/g/data/bs94/AUS2200/mjo-neutral2013/v1-0/1hr/hus/hus_AUS2200_mjo-neutral_1hrPt_201303011900-201303020000.nc",
+            chunks={"lev": -1, "lat": {}, "lon": {}}
+        )["hus"]
+        levs = var.lev.values
     else:
         raise ValueError("height_coord must be either 'rho' or 'theta'")        
     
-    #Load the atmosphere_hybrid_height_coordinate variable as levs
-    ua = xr.open_dataset(
-        "/g/data/bs94/AUS2200/mjo-neutral2013/v1-0/1hr/ua/ua_AUS2200_mjo-neutral_1hrPt_201303011900-201303020000.nc",
-        chunks={}
-        )
-    levs = ua.lev.values
 
     #Load the orography file
     orog = xr.open_dataset("/g/data/bs94/AUS2200/mjo-neutral2013/v1-0/fx/orog/orog_AUS2200_mjo-neutral_fx.nc")
@@ -1132,13 +1141,16 @@ def aus2200_hybrid_height_calc(height_coord="rho"):
     #Convert to height above ground level and assign to a chunked dataarray
     Z_agl_da = xr.DataArray(Z - orog_repeated,
                 dims=["lat","lon","lev"],
-                coords={"lat":orog.lat,"lon":orog.lon,"lev":ua.lev}).chunk({
+                coords={"lat":orog.lat,"lon":orog.lon,"lev":var.lev}).chunk({
         "lev":-1,
-        "lon":ua.ua.chunksizes["lon"][0],
-        "lat":ua.ua.chunksizes["lat"][0]})
+        "lon":var.chunksizes["lon"][0],
+        "lat":var.chunksizes["lat"][0]})
 
     #Assign attributes and save to disk
-    xr.Dataset({"Z_agl":Z_agl_da.assign_attrs(
+    ds = xr.Dataset({"Z_agl":Z_agl_da.assign_attrs(
         {"description":"Height above surface for the AUS2200 grid",
         "units":"m"}
-        )}).to_zarr("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_z_agl.zarr",mode="w")    
+        )})
+    ds.to_zarr("/g/data/ng72/ab4502/sea_breeze_detection/aus2200_z_agl_"+height_coord+".zarr",mode="w")    
+
+    return ds
