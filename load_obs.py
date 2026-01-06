@@ -108,12 +108,12 @@ def load_half_hourly_stn_obs(state,time_slice):
     u,v = metpy.calc.wind_components(
         stn_obs.wspd.metpy.convert_units("m/s"),
         stn_obs.wdir * metpy.units.units.deg)
-    stn_obs["u"] = u.pint.dequantify()
-    stn_obs["v"] = v.pint.dequantify()
+    stn_obs["u"] = u.metpy.dequantify()
+    stn_obs["v"] = v.metpy.dequantify()
 
     #Calculate specific humidity.
     stn_obs["hus"] = mpcalc.specific_humidity_from_dewpoint(stn_obs["sp"],stn_obs["Tdew"])
-    stn_obs["hus"] = stn_obs["hus"].pint.dequantify()
+    stn_obs["hus"] = stn_obs["hus"].metpy.dequantify()
 
     return stn_obs
 

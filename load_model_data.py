@@ -165,9 +165,10 @@ def load_era5_variable(vnames,t1,t2,lon_slice,lat_slice,chunks="auto"):
 
     #Set up times to search within catalog
     data_catalog = get_intake_cat_era5()
-    time_starts = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m%d").astype(int).values
+    time_starts = pd.date_range(pd.to_datetime(t1).replace(day=1,hour=0),t2,freq="MS").strftime("%Y%m%d").astype(int).values
     time_ends = [(t + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1) for t in pd.to_datetime(time_starts,format="%Y%m%d")]
     times = [str(t1) + "-" + t2.strftime("%Y%m%d") for t1,t2 in zip(time_starts,time_ends)]
+    print(times)
 
     #Load the data using intake
     out = dict.fromkeys(vnames)
@@ -222,7 +223,7 @@ def load_era5_static(lon_slice, lat_slice, t1, t2, chunks="auto"):
     """
 
     data_catalog = get_intake_cat_era5()
-    time_starts = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m%d").astype(int).values
+    time_starts = pd.date_range(pd.to_datetime(t1).replace(day=1,hour=0),t2,freq="MS").strftime("%Y%m%d").astype(int).values
     time_ends = [(t + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1) for t in pd.to_datetime(time_starts,format="%Y%m%d")]
     times = [str(t1) + "-" + t2.strftime("%Y%m%d") for t1,t2 in zip(time_starts,time_ends)]
 

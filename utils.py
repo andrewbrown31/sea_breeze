@@ -197,6 +197,7 @@ def load_era5_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
         uprime (xarray.DataArray): The rotated u-component of the wind.
         vprime (xarray.DataArray): The rotated v-component of the wind.
         lsm (xarray.DataArray): The land-sea mask.
+        huss (xarray.DataArray): The specific humidity.
     """
 
     angle_ds_path = base_path +\
@@ -221,7 +222,16 @@ def load_era5_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
         lon_slice,lat_slice,t1,t2
         )
 
-    return angle_ds, ta, uas, vas, uprime, vprime, lsm
+    d2 = load_model_data.load_era5_variable(
+        ["2d"],t1,t2,lon_slice,lat_slice,chunks={}
+        )["2d"]["d2m"].chunk({"time":1,"lat":-1,"lon":-1})
+    ps = load_model_data.load_era5_variable(
+        ["sp"],t1,t2,lon_slice,lat_slice,chunks={}
+        )["sp"]["sp"].chunk({"time":1,"lat":-1,"lon":-1})
+        
+    huss = mpcalc.specific_humidity_from_dewpoint(ps,d2)            
+
+    return angle_ds, ta, uas, vas, uprime, vprime, lsm, huss
 
 def load_barra_r_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
 
@@ -246,8 +256,11 @@ def load_barra_r_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
     _,lsm = load_model_data.load_barra_static(
         "AUS-11",lon_slice,lat_slice
         )
+    huss = load_model_data.load_barra_variable(
+        "huss",t1,t2,"AUS-11","1hr",lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
+        )
 
-    return angle_ds, ta, uas, vas, uprime.drop("height"), vprime.drop("height"), lsm
+    return angle_ds, ta, uas, vas, uprime.drop("height"), vprime.drop("height"), lsm, huss
 
 def load_barra_c_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
 
@@ -272,8 +285,11 @@ def load_barra_c_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
     _,lsm = load_model_data.load_barra_static(
         "AUST-04",lon_slice,lat_slice
         )
+    huss = load_model_data.load_barra_variable(
+        "huss",t1,t2,"AUST-04","1hr",lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
+        )
 
-    return angle_ds, ta, uas, vas, uprime.drop("height"), vprime.drop("height"), lsm
+    return angle_ds, ta, uas, vas, uprime.drop("height"), vprime.drop("height"), lsm, huss
 
 def load_aus2200_filtering_data(lon_slice,lat_slice,t1,t2,base_path,exp_id):
 
@@ -285,6 +301,17 @@ def load_aus2200_filtering_data(lon_slice,lat_slice,t1,t2,base_path,exp_id):
         )
     ta = load_model_data.load_aus2200_variable(
         "ta",
+        t1,
+        t2,
+        exp_id,
+        lon_slice,
+        lat_slice,
+        "1hr",
+        smooth=False,
+        hgt_slice=slice(0,10),
+        chunks={"time":1,"lat":-1,"lon":-1}).sel(lev=5)
+    huss = load_model_data.load_aus2200_variable(
+        "hus",
         t1,
         t2,
         exp_id,
@@ -331,7 +358,7 @@ def load_aus2200_filtering_data(lon_slice,lat_slice,t1,t2,base_path,exp_id):
         lon_slice,
         lat_slice)
 
-    return angle_ds, ta, uas, vas, uprime, vprime, lsm
+    return angle_ds, ta, uas, vas, uprime, vprime, lsm, huss
 
 
 def local_time(ds):
