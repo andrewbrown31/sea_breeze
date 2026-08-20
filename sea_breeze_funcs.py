@@ -528,7 +528,7 @@ def kinematic_frontogenesis(q,u,v):
 
     return out
 
-def icon(u,v,filter_option):
+def icon(u,v,remove_stationary):
 
     """
     Calculate instantaneous contraction rate using mean meridional and zonal wind components averaged over a given layer.
@@ -543,8 +543,8 @@ def icon(u,v,filter_option):
         U wind component, with matching coordinates.
     v : xarray.DataArray
         V wind component, with matching coordinates.
-    filter_option : boolean
-        An option for running a filter that subtracts the average of the previous and the following timestep for each timestamp in the calculation
+    remove_stationary : boolean
+        An option for subtracting the average of the previous and the following timestep for each timestamp in the calculation to remove stationary features
 
     Returns
     -------
@@ -598,7 +598,7 @@ def icon(u,v,filter_option):
         description = "2d instantaneous contraction rate parameter.")
 
     #Smooth the dataset by subtracting the mean of the previous and following timestep at each timestamp in the dataset (optional):
-    if filter_option == True:
+    if remove_stationary == True:
         
         Fvar = out["F"]
 
@@ -606,10 +606,10 @@ def icon(u,v,filter_option):
         neighbour_mean = (Fvar.shift(time=1) + Fvar.shift(time=-1)) / 2
 
         #Subtract the mean at each timestep
-        F_filtered = Fvar - neighbour_mean
+        F_nonstat = Fvar - neighbour_mean
 
         # Store back into the original dataset
-        out["F_filtered"] = F_filtered
+        out["F_nonstat"] = F_nonstat
 
     return out
 
