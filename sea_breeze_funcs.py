@@ -409,15 +409,14 @@ def fuzzy_function(x, x1=0, y1=0, y2=1, D=2):
 
     return f_x
 
-def fuzzy_function_combine(wind_change,q_change,t_change,combine_method="product"):
+def fuzzy_function_combine(change_ls,var_names,combine_method="product"):
 
     """
     From Coceal et al. 2018, a fuzzy logic method for identifying sea breezes. 
 
     ## Input
-    * wind_change: xarray dataarray of wind speed change in the onshore direction
-    * q_change: xarray dataarray of specific humidity change
-    * t_change: xarray dataarray of temperature change
+    * change_ls: list of xarray dataarrays of hourly changes (see hourly_change function)
+    * var_names: list of variable names corresponding to change_ls. Must be in ["wind_change","q_change","t_change"]
     * combine_method: method for combining the fuzzy functions. Can be "product" or "mean". Note that Coceal et al. 2018 use the mean method.
 
     ## Output
@@ -428,26 +427,34 @@ def fuzzy_function_combine(wind_change,q_change,t_change,combine_method="product
     Coceal, O., Bohnenstengel, S. I., & Kotthaus, S. (2018). Detection of sea-breeze events around London using a fuzzy-logic algorithm. Atmospheric Science Letters, 19(9). https://doi.org/10.1002/asl.846
     """
 
+    assert len(change_ls) == len(var_names), "change_ls and var_names must be the same length"
+    for var in var_names:
+        assert var in ["wind_change","q_change","t_change"], "var_names must be in ['wind_change','q_change','t_change']"
+
     #Calculate the fuzzy functions for each variable
-    wind_fuzzy = fuzzy_function(wind_change)
-    q_fuzzy = fuzzy_function(q_change)
-    t_fuzzy = fuzzy_function(-t_change)
+    fuzzy_functions = []
+    for change, var_name in zip(change_ls, var_names):
+        if var_name == "t_change":
+            fuzzy_functions.append(fuzzy_function(-change))
+        else:
+            fuzzy_functions.append(fuzzy_function(change))
 
     #Combine the fuzzy functions
-    if combine_method=="product":
-        mask = (wind_fuzzy * q_fuzzy * t_fuzzy)
-    elif combine_method=="mean":
-        mask = ((wind_fuzzy + q_fuzzy + t_fuzzy) / 3)
+    if combine_method=="mean":
+        mask = xr.concat(fuzzy_functions,dim="fuzzy_dim").mean(dim="fuzzy_dim")
+    elif combine_method=="product":
+        mask = xr.concat(fuzzy_functions,dim="fuzzy_dim").prod(dim="fuzzy_dim")
     else:
         raise ValueError("combine_method must be 'product' or 'mean'")
 
     mask = mask.assign_attrs({"combine_method":combine_method})
+    mask = mask.assign_attrs({"variables_used":str(var_names)})
     mask = mask.assign_attrs(
         units = "[0,1]",
         long_name = "Fuzzy sea breeze detection algorithm",
-        description = "Fuzzy sea breeze detection algorithm using the rate of change of moisture, temperature and onshore wind speed, following Coceal et al. (2018)")      
+        description = "Fuzzy sea breeze detection algorithm using the rate of change of moisture, temperature and/or onshore wind speed, following Coceal et al. (2018)")      
 
-    return mask
+    return mask.rename("__xarray_dataarray_variable__")
 
 def kinematic_frontogenesis(q,u,v):
 

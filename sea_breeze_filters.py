@@ -638,7 +638,7 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
         if output_chunks is None:
             mask_save = filtered_mask.to_zarr(filter_out_path,compute=False,mode="w")
         else:
-            mask_save = filtered_mask.chunk(output_chunks).to_zarr(filter_out_path,compute=False,mode="w").persist()
+            mask_save = filtered_mask.chunk(output_chunks).to_zarr(filter_out_path,compute=True,mode="w")
     
     return filtered_mask
 
