@@ -535,6 +535,91 @@ def kinematic_frontogenesis(q,u,v):
 
     return out
 
+def icon(u,v,remove_stationary):
+
+    """
+    Calculate instantaneous contraction rate using mean meridional and zonal wind components averaged over a given layer.
+
+    Identifies regions of low-level lifting due to flow convergence and deformation without the need for adding humidity.
+
+    It is based on the methods of Cohen & Schultz (2005)
+
+    Parameters
+    ----------
+    u : xarray.DataArray
+        U wind component, with matching coordinates.
+    v : xarray.DataArray
+        V wind component, with matching coordinates.
+    remove_stationary : boolean
+        An option for subtracting the average of the previous and the following timestep for each timestamp in the calculation to remove stationary features
+
+    Returns
+    -------
+    xarray.Dataset
+        2D instantaneous contraction rate in units 1/s.
+
+    Notes
+    -----
+    The input data is rechunked in lat/lon dimensions for gradient calculations.
+    """
+
+    #Rechunk data in one lat and lon dim
+    u = u.chunk({"lat":-1,"lon":-1})
+    v = v.chunk({"lat":-1,"lon":-1})
+
+
+    #Calculate grid spacing in km using metpy, in x and y
+    x, y = np.meshgrid(u.lon,u.lat)
+    dx, dy = mpcalc.lat_lon_grid_deltas(x,y)
+
+    #Convert the x and y grid spacing arrays into xarray datasets. Need to interpolate to match the original grid
+    dx = xr.DataArray(np.array(dx),dims=["lat","lon"],coords={"lat":u.lat.values, "lon":u.lon.values[0:-1]}).\
+            interp({"lon":u.lon,"lat":u.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
+            chunk({"lat":u.chunksizes["lat"][0], "lon":u.chunksizes["lon"][0]})
+    dy = xr.DataArray(np.array(dy),dims=["lat","lon"],coords={"lat":u.lat.values[0:-1], "lon":u.lon.values}).\
+            interp({"lon":u.lon,"lat":u.lat},method="linear",kwargs={"fill_value":"extrapolate"}).\
+            chunk({"lat":u.chunksizes["lat"][0], "lon":u.chunksizes["lon"][0]})
+
+    #Calculate horizontal U and V gradients, as well as divergence and deformation 
+    #Following https://www.ncl.ucar.edu/Document/Functions/Contributed/shear_stretch_deform.shtml
+    ddy_u = (xr.DataArray(da.gradient(u,axis=u.get_axis_num("lat")), dims=u.dims, coords=u.coords) / dy)
+    ddx_u = (xr.DataArray(da.gradient(u,axis=u.get_axis_num("lon")), dims=u.dims, coords=u.coords) / dx)
+    ddy_v = (xr.DataArray(da.gradient(v,axis=u.get_axis_num("lat")), dims=u.dims, coords=u.coords) / dy)
+    ddx_v = (xr.DataArray(da.gradient(v,axis=u.get_axis_num("lon")), dims=u.dims, coords=u.coords) / dx)
+    div = ddx_u + ddy_v
+    strch_def = ddx_u - ddy_v
+    shear_def = ddx_v + ddy_u
+    tot_def = np.sqrt(strch_def**2 + shear_def**2)
+
+
+    #Calculate the deformation due to shear and stretching
+    E = ((strch_def**2 + shear_def**2)**0.5)
+
+    #Calculate the Instantaneous Contraction Rate (F)
+    F = 0.5*(E-div)
+
+    out = xr.Dataset({"F":F})
+    out["F"] = out["F"].assign_attrs(
+        units = "1/s",
+        long_name = "Instantaneous contraction rate",
+        description = "2d instantaneous contraction rate parameter.")
+
+    #Smooth the dataset by subtracting the mean of the previous and following timestep at each timestamp in the dataset (optional):
+    if remove_stationary == True:
+        
+        Fvar = out["F"]
+
+        #Average the previous and following timestep
+        neighbour_mean = (Fvar.shift(time=1) + Fvar.shift(time=-1)) / 2
+
+        #Subtract the mean at each timestep
+        F_nonstat = Fvar - neighbour_mean
+
+        # Store back into the original dataset
+        out["F_nonstat"] = F_nonstat
+
+    return out
+
 def coast_relative_frontogenesis(q,u,v,angle_da):
 
     """

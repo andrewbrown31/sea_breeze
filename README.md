@@ -89,7 +89,7 @@ In addition, for loading ERA5 data hosted on the NCI within the `load_model_data
 If would like to make changes to improve this code, please reach out or make an issue!
 
 ## Citing
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16938245.svg)](https://doi.org/10.5281/zenodo.17220916)
+Please consider citing [this paper](https://gmd.copernicus.org/articles/19/933/2026/)
 
 ## WxSysLib
 This code was developed with funding from the ARC Centre of Excellence for 21st Century Weather. The code is also available in the Centre's [WxSysLib](https://github.com/21centuryweather/WxSysLib/tree/main/utils/diagnostics/sea_breeze) repository. However, the version provided here should be considered the most up to date.
