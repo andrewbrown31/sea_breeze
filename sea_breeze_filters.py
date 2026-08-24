@@ -503,7 +503,7 @@ def filter_2d(ds,angle_ds=None,lsm=None,props_df_output_path=None,output_land_se
 
     return ds, props_df
 
-def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_change_ds=None,ta=None,vprime=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,skipna=False,output_chunks=None,**kwargs):
+def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_change_ds=None,ta=None,vprime=None,lsm=None,angle_ds=None,save_mask=False,filter_out_path=None,props_df_out_path=None,skipna=False,output_chunks=None,remove_single_timesteps=False,**kwargs):
 
     """
     Identify sea breeze objects.
@@ -540,6 +540,8 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
         If True, calculation of the field percentile will ignore NaNs.
     output_chunks : dict, optional
         Chunking to use for zarr output. If None, uses default chunking {"time":1,"lat":-1,"lon":-1}.
+    remove_single_timesteps : bool, optional
+        If True, objects in timesteps with no objects in the previous or following timestep will be removed. This data will be stored in a new variable called 'objects_cleaned'
     **kwargs
         Options for filtering the sea breeze objects passed to filter_2d. See filter_2d and Mask_Options class for details.
 
@@ -628,6 +630,26 @@ def filter_3d(field,threshold="percentile",threshold_value=None,p=95,hourly_chan
     if threshold=="percentile":
         filtered_mask["mask"] = filtered_mask["mask"].assign_attrs({"percentile":str(p)})
     
+    #Remove objects with no object in the previous or following timestep (optional):
+    if remove_single_timesteps == True:
+        
+        obj = filtered_mask["mask"]
+
+        # Does each timestep contain at least one object?
+        has_object = obj.any(dim=("lat", "lon"))
+
+        # Does the previous or next timestep contain an object?
+        has_neighbour_object = (
+            has_object.shift(time=1, fill_value=False) |
+            has_object.shift(time=-1, fill_value=False)
+        )
+
+        # Keep objects only where previous OR next timestep also has an object
+        obj_cleaned = obj.where(has_neighbour_object, False)
+
+        # Save back into dataset
+        filtered_mask["objects_cleaned"] = obj_cleaned
+        
     #Save the filtered mask if required
     if save_mask:
         drop_vars = ["crs","height","level_height","model_level_number","sigma"]
