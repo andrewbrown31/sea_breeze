@@ -22,6 +22,9 @@ if __name__ == "__main__":
     parser.add_argument("--lon1",default=108,type=float,help="Start longitude")
     parser.add_argument("--lon2",default=158.5,type=float,help="End longitude")    
     parser.add_argument("--model",default="era5",type=str,help="Model directory name for input/output. Could be era5 (default)")
+    parser.add_argument("--driving_model",default="",type=str,help="For BARPA, the driving model to use. Could be EC-Earth3, ACCESS-ESM1-5 or ERA5.")
+    parser.add_argument("--scenario",default="",
+                        type=str,help="For BARPA, the scenario to use. Could be historical, ssp370 (for ACCESS/EC-Earth driving model) or evaluation (for ERA5 driving model).")
     parser.add_argument("--filter_name",default="",type=str,help="Filter name to add to the output file names")
     parser.add_argument("--threshold",default="fixed",type=str,help="Threshold to use for the filter. Could be fixed (default) or percentile")
     parser.add_argument("--p",default=99.5,type=float,help="Percentile to use for the filter. Only used if threshold is percentile. Default is 99.5")
@@ -47,10 +50,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     #Set up dask client
-    #client = Client()
+    #client = Client(threads_per_worker=1)
     #https://opus.nci.org.au/spaces/DAE/pages/155746540/Set+up+a+Dask+Cluster
     #https://distributed.dask.org/en/latest/plugins.html#nanny-plugins
-    client = Client(scheduler_file=os.environ["DASK_PBS_SCHEDULER"])
+    
+    client = Client(scheduler_file=os.environ["DASK_PBS_SCHEDULER"], threads_per_worker=1)
+
+    # client = Client()
+    # from sea_breeze import sea_breeze_filters, utils
+    
     from distributed.diagnostics.plugin import UploadDirectory
     client.register_plugin(UploadDirectory(
         "/home/548/ab4502/working/sea_breeze")
@@ -153,20 +161,24 @@ if __name__ == "__main__":
 
     #Load other datasets that can be used for additional filtering
     if "era5" in model:
-        angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_era5_filtering_data(
+        angle_ds, ta, uas, vas, uprime, vprime, lsm, huss = utils.load_era5_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path
             )
     elif "barra_r" in model:
-        angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_barra_r_filtering_data(
+        angle_ds, ta, uas, vas, uprime, vprime, lsm, huss = utils.load_barra_r_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path
             )
     elif "barra_c" in model:
-        angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_barra_c_filtering_data(
+        angle_ds, ta, uas, vas, uprime, vprime, lsm, huss = utils.load_barra_c_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path
             )
     elif "aus2200" in model:
-        angle_ds, ta, uas, vas, uprime, vprime, lsm = utils.load_aus2200_filtering_data(
+        angle_ds, ta, uas, vas, uprime, vprime, lsm, huss = utils.load_aus2200_filtering_data(
             lon_slice,lat_slice,t1,t2,base_path,exp_id
+            )
+    elif "barpa-c" in model:
+        angle_ds, ta, uas, vas, uprime, vprime, lsm, huss = utils.load_barpa_c_filtering_data(
+            lon_slice,lat_slice,t1,t2,base_path,args.driving_model,args.scenario
             )
     else:
         raise ValueError("Model not recognised. Please use era5, barra_r, barra_c or aus2200.")

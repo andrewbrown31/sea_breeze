@@ -133,7 +133,7 @@ def unpack_level1b(rid, times):
 		print("NO FILES FOUND FOR RID: "+rid+" AND TIMES "+str(times[0])+" "+str(times[-1]))
 	file_dates = np.array([dt.datetime.strptime(f.split("/")[8].split("_")[1], "%Y%m%d") for f in files])
 	target_files = files[(file_dates >= times[0].replace(hour=0, minute=0)) & (file_dates <= times[1].replace(hour=0, minute=0))]
-	extract_to = "/scratch/gb02/ab4502/radar/"
+	extract_to = "/scratch/ng72/ab4502/radar/"
 	for f in target_files:
 		with zipfile.ZipFile(f, "r") as zip_ref:
 			zip_ref.extractall(extract_to)
@@ -155,7 +155,7 @@ def load_radar_level1b(rid,times):
     unpack_level1b(rid, times)
 	
     #Constuct a list of the unpacked grid files
-    grid_files = np.sort(glob.glob("/scratch/gb02/ab4502/radar/"+rid+"*_grid.nc"))
+    grid_files = np.sort(glob.glob("/scratch/ng72/ab4502/radar/"+rid+"*_grid.nc"))
 	
     #Select the files that are within the time range
     file_dates = np.array([dt.datetime.strptime(f.split("/")[5].split("_")[1] + f.split("/")[5].split("_")[2],\

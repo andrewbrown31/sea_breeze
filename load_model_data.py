@@ -418,6 +418,99 @@ def load_barra_variable(vname, t1, t2, domain_id, freq, lat_slice, lon_slice, ch
         
     return da
 
+def load_barpa_variable(vname, t1, t2, domain_id, freq, driving_model, scenario, lat_slice, lon_slice, chunks="auto", smooth=False, sigma=2, smooth_axes=None):
+
+    """
+    Load a variable from the BARPA dataset.
+
+    Parameters
+    ----------
+    vname : str
+        Name of BARPA variable to load.
+    t1 : str
+        Start time in "%Y-%m-%d %H:%M".
+    t2 : str
+        End time in "%Y-%m-%d %H:%M".
+    domain_id : str
+        BARRA domain, either "AUS-04", "AUST-11" or "AUS-11".
+    freq : str
+        Frequency string (e.g., "1h").
+    driving_model : str
+        Driving model for BARPA, either "EC-Earth3", "ACCESS-ESM1-5" or "ERA5".
+    scenario: str
+        Scenario for BARPA, either "historical", "ssp370" (for ACCESS/EC-Earth driving model) or "evaluation" (for ERA5 driving model).
+    lat_slice : slice or array-like
+        Slice or indices to restrict latitude domain.
+    lon_slice : slice or array-like
+        Slice or indices to restrict longitude domain.
+    chunks : dict or str, optional
+        Chunking for xarray open_mfdataset (default is "auto").
+    smooth : bool, optional
+        If True, smooth the data using a Gaussian filter.
+    sigma : float, optional
+        Sigma value for the Gaussian filter if smoothing.
+    smooth_axes : iterable, optional
+        Axes to smooth over if smoothing.
+
+    Returns
+    -------
+    da : xarray.DataArray
+        The requested variable, optionally smoothed.
+
+    """
+
+    if domain_id in ["AUST-04"]:
+        model = "BARPA-C"
+    elif domain_id in ["AUST-11","AUS-11"]:
+        model = "BARPA-R"
+    else:
+        raise ValueError("Invalid domain id")
+
+    if driving_model in ["ERA5","EC-Earth3"]:
+        ensemble = "r1i1p1f1"
+    elif driving_model == "ACCESS-ESM1-5":
+        ensemble = "r6i1p1f1"
+
+    #data_catalog = get_intake_cat_barra()
+    #times = pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="MS").strftime("%Y%m").astype(int).values
+    times = np.unique(pd.date_range(pd.to_datetime(t1).replace(day=1),t2,freq="h",inclusive="both").strftime("%Y%m").astype(int).values)
+    files = [glob.glob("/g/data/py18/BARPA/output/CMIP6/DD/"\
+                    +domain_id+"/BOM/"+driving_model+"/"+scenario+"/"+ensemble+"/"+model+\
+                        "/v1-r1/"+freq+"/"+vname+"/latest/"+\
+                            vname+"_"+domain_id+"_*_"+str(t)+"-*.nc") for t in times]
+    da = xr.open_mfdataset(
+        np.concatenate(files),
+        chunks=chunks).\
+                sel(lon=lon_slice, lat=lat_slice, time=slice(t1,t2))[vname]
+    #da = data_catalog.search(
+    #    variable_id=vname,
+    #    domain_id=domain_id,
+    #    freq=freq,
+    #    start_time=times)\
+    #        .to_dask(cdf_kwargs={"chunks":chunks}).\
+    #            sel(lon=lon_slice, lat=lat_slice, time=slice(t1,t2))[vname]
+    
+    #Optional smoothing
+    da = da.assign_attrs({"smoothed":smooth})
+    if smooth:
+
+        if smooth_axes is not None:
+            for ax in smooth_axes:
+                chunks[ax] = -1
+            smooth_axes = (np.where(np.in1d(da.isel(time=0).dims,smooth_axes))[0])
+        else:
+            chunks["lon"] = -1
+            chunks["lat"] = -1
+
+        da = da.map_blocks(
+            gaussian_filter_time_slice,
+            kwargs={"sigma":sigma,"axes":smooth_axes},
+            template=da
+        )
+        da = da.assign_attrs({"gaussian_smoothing_sigma":sigma})
+        
+    return da
+
 def load_barra_static(domain_id,lon_slice,lat_slice):
 
     """

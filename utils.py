@@ -21,8 +21,8 @@ def load_diagnostics(field,model):
     path = "/g/data/ng72/ab4502/sea_breeze_detection"
 
     # Construct the file path and open the dataset. If the field is "fuzzy", use there should be only one file
-    if field == "fuzzy":
-        ds = xr.open_dataset(f"{path}/{model}/fuzzy_201301010000_201802282300.zarr",engine="zarr",chunks={})["__xarray_dataarray_variable__"]
+    if "fuzzy" in field:
+        ds = xr.open_dataset(f"{path}/{model}/"+field+"_201301010000_201802282300.zarr",engine="zarr",chunks={})["__xarray_dataarray_variable__"]
     else:
         #If the field is not "fuzzy", we need to open multiple files. Get the file names using glob
         # and open them using xarray
@@ -55,25 +55,25 @@ def load_diagnostics(field,model):
 def load_diagnostics_time_slice(field,model,t1,t2,lat_slice,lon_slice,exp_id=None):
 
     path = "/g/data/ng72/ab4502/sea_breeze_detection"
-    if ("aus2200" in model) & (field != "fuzzy"):
+    if ("aus2200" in model) & ("fuzzy" not in field):
         files = np.sort(glob.glob(f"{path}/{model}/{field}_{exp_id}_????????????_????????????.zarr"))
     else:
         files = np.sort(glob.glob(f"{path}/{model}/{field}_????????????_????????????.zarr"))
-    # file_dates = [pd.to_datetime(f.split("/")[-1].split("_")[-2]) for f in files]
-    # file_months = np.array([f.month for f in file_dates])
-    # file_years = np.array([f.year for f in file_dates])
-    file_date_start = np.array([pd.to_datetime(f.split("/")[-1].split("_")[-2]) for f in files])
-    file_date_end = np.array([pd.to_datetime(f.split("/")[-1].split("_")[-1].split(".")[0]) for f in files])
+    file_dates = [pd.to_datetime(f.split("/")[-1].split("_")[-2]) for f in files]
+    file_months = np.array([f.month for f in file_dates])
+    file_years = np.array([f.year for f in file_dates])
+    #file_date_start = np.array([pd.to_datetime(f.split("/")[-1].split("_")[-2]) for f in files])
+    #file_date_end = np.array([pd.to_datetime(f.split("/")[-1].split("_")[-1].split(".")[0]) for f in files])
 
     t1 = pd.to_datetime(t1)
     t2 = pd.to_datetime(t2)
 
     # Get the files that are within the time range
-    if field != "fuzzy":
-        # file_mask = (file_years == t1.year) & (file_months >= t1.month) & \
-        #             (file_years == t2.year) & (file_months <= t2.month)
-        file_mask = (file_date_start >= t1) & (file_date_end <= t2)
-        files = files[file_mask]
+    if "fuzzy" not in field:
+        file_mask = (file_years == t1.year) & (file_months >= t1.month) & \
+                    (file_years == t2.year) & (file_months <= t2.month)
+        # file_mask = (file_date_start >= t1) & (file_date_end <= t2)
+        # files = files[file_mask]
 
     if len(files) == 0:
         raise ValueError(f"No files found for {field} in {model} between {t1} and {t2}")
@@ -85,8 +85,8 @@ def load_diagnostics_time_slice(field,model,t1,t2,lat_slice,lon_slice,exp_id=Non
     # Select the time slice
     ds = ds.sel(lat=lat_slice, lon=lon_slice, time=slice(t1, t2)).chunk({"time": 1, "lat": -1, "lon": -1})
 
-    if field == "fuzzy":
-        ds = ds.rename({"__xarray_dataarray_variable__":"fuzzy"})
+    if "fuzzy" in field:
+        ds = ds.rename({"__xarray_dataarray_variable__":field})
 
     return ds
 
@@ -290,6 +290,35 @@ def load_barra_c_filtering_data(lon_slice,lat_slice,t1,t2,base_path):
         )
 
     return angle_ds, ta, uas, vas, uprime.drop("height"), vprime.drop("height"), lsm, huss
+
+def load_barpa_c_filtering_data(lon_slice,lat_slice,t1,t2,base_path,driving_model,scenario):
+
+    angle_ds_path = base_path +\
+        "coastline_data/barra_c.nc"
+    angle_ds = load_model_data.get_coastline_angle_kernel(
+        compute=False,path_to_load=angle_ds_path,lat_slice=lat_slice,lon_slice=lon_slice
+        )
+    ta = load_model_data.load_barpa_variable(
+        "tas",t1,t2,"AUST-04","1hr",driving_model,scenario,lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
+        )
+    uas = load_model_data.load_barpa_variable(
+        "uas",t1,t2,"AUST-04","1hr",driving_model,scenario,lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
+        )
+    vas = load_model_data.load_barpa_variable(
+        "vas",t1,t2,"AUST-04","1hr",driving_model,scenario,lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
+        )
+    uprime, vprime = sea_breeze_funcs.rotate_wind(
+        uas,
+        vas,
+        angle_ds["angle_interp"])
+    _,lsm = load_model_data.load_barra_static(
+        "AUST-04",lon_slice,lat_slice
+        )
+    huss = load_model_data.load_barpa_variable(
+        "huss",t1,t2,"AUST-04","1hr",driving_model,scenario,lat_slice,lon_slice,chunks={"time":1,"lat":-1,"lon":-1}
+        )
+
+    return angle_ds, ta, uas, vas, uprime.drop("height"), vprime.drop("height"), lsm, huss    
 
 def load_aus2200_filtering_data(lon_slice,lat_slice,t1,t2,base_path,exp_id):
 

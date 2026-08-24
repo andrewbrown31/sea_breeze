@@ -846,9 +846,9 @@ if __name__ == "__main__":
     #lat_slice, lon_slice = utils.get_darwin_large_bounds()
     #time_slice = slice("2016-01-01 00:00","2016-01-31 23:00")
 
-    t1="2016-01-08 00:00"
-    t2="2016-01-15 23:00"
-    lat_slice,lon_slice = utils.get_aus_bounds()
+    # t1="2017-01-08 00:00"
+    # t2="2017-01-15 23:00"
+    # lat_slice,lon_slice = utils.get_aus_bounds()
 
     # compare_models_animation(lat_slice,lon_slice,time_slice,outname="compare_models_perth_20160106_20160112")
 
@@ -857,16 +857,16 @@ if __name__ == "__main__":
 
     #barra_c_animation(lat_slice,lon_slice,time_slice)
     #aus2200_animation(None,None,time_slice)
-    field_and_mask_animation(lat_slice,lon_slice,slice(t1,t2),cmap="Blues",field="hus",mask_name="F",vmin=0.005,vmax=0.02)
+    #field_and_mask_animation(lat_slice,lon_slice,slice(t1,t2),cmap="Blues",field="hus",mask_name="F",vmin=0.005,vmax=0.02)
 
 
-    # rid="70"
-    # field="corrected_velocity"
-    # z=500    
-    # for t in pd.date_range("2016-01-01 00:00","2016-01-31 00:00",freq="1D"):
-    #     print(t)
-    #     times = [t, t+dt.timedelta(days=1)]
-    #     radar_animation(rid,times,field,z)
+    rid="3"
+    field="corrected_velocity"
+    z=1000
+    for t in pd.date_range("2017-01-15 18:00","2017-01-18 23:00",freq="1D"):
+        print(t)
+        times = [t, t+dt.timedelta(days=1)]
+        radar_animation(rid,times,field,z)
 
 
     #Animate
