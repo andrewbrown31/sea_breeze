@@ -1,15 +1,19 @@
 # Sea breeze detection
 
-This repository has code that is intended to detect sea breezes from numerical weather model output. The code relies on packages including xarray/dask, scipy, metpy, scikit-image, pyproj and pandas (see [requirements](#requirements)). 
+This repository contains code that can be applied to detect sea breezes from numerical weather model output. It can also be adapted for more generalised detection of convergence lines. The code relies on packages including xarray/dask, scipy, metpy, scikit-image, pyproj and pandas (see [requirements](#requirements)). 
 
 Contents:
 * [Code structure](#code-structure)
     * [Pre-processing model data](#pre-processing-model-data)
-    * [Sea breeze diagnostics](#sea-breeze-diagnostics)
+    * [Diagnostics](#sea-breeze-diagnostics)
     * [Object identification and filtering](#sea-breeze-filtering)
 * [Examples](#examples)
     * [Local example](#local-example)
+       * [ERA5 sea breezes](#era5-sea-breezes)
     * [On the gadi HPC system](#on-the-gadi-hpc-system)
+       * [AUS2200 sea breezes](#aus2200-sea-breezes)
+       * [BARRA-R sea breezes](#barra-r-sea-breezes)
+       * [BARRA-C convergence lines](#barra-c-convergence-lines)
 * [Requirements](#requirements)
 * [Contributing](#contributing)
 * [Citing](#citing)
@@ -19,27 +23,31 @@ Contents:
 The code is organised into three sequential steps:
 
 1) [Pre-processing model data](#pre-processing-model-data)
-2) [Calculating sea breeze diagnostics](#sea-breeze-diagnostics)
-3) [Object identification and filtering](#sea-breeze-filtering)
+2) [Calculating diagnostics of sea breezes or convergence lines](#calculating-diagnostics-of-sea-breezes-or-convergence-lines)
+3) [Object identification and filtering](#filtering)
 
 ### Pre-processing model data
 
 These are functions for loading and pre-processing model data, and can be found in [`load_model_data`](load_model_data.py). This includes loading temperature, moisture, wind, and static variables from four different model datasets hosted on the [NCI data catalog](https://geonetwork.nci.org.au/geonetwork/srv/eng/catalog.search#/home) (requires the code to be run locally on the NCI system). There is also a function that finds the angle of dominant coastline orientation from a land-sea mask ([`get_coastline_angle_kernel`](load_model_data.py#L639)). This is important for finding the onshore component of the wind that is used in most sea breeze diagnostics (with thanks to Ewan Short for developing this method and code with input from Jarrah Harrison-Lofthouse).
 
-### Sea breeze diagnostics
+### Calculating diagnostics of sea breezes or convergence lines
 
-These are functions for calculating sea breeze diagnostics, and can be found in [`sea_breeze_funcs`](sea_breeze_funcs.py). There are currently three key diagnostics:
+These are functions for calculating diagnostics, and can be found in [`sea_breeze_funcs`](sea_breeze_funcs.py). There are currently three key diagnostics for sea breezes:
 
 * Kinematic moisture frontogenesis (`kinematic_frontogenesis`)
 * Sea breeze index (`calc_sbi`)
 * Fuzzy logic algorithm (`fuzzy_function_combine`)
 
+And one for convergence lines in general:
+
+* Instantaneous contraction rate (`icon`)
+
 Details on each diagnostic can be found in the relevant docstrings. For the fuzzy logic algoirithm, hourly changes in wind, temperature, and moisture need to be first calculated using the `hourly_change` function within [`sea_breeze_funcs`](sea_breeze_funcs.py). It is recommended to calculate hourly changes for the entire period of interest, as the algorithm needs to find percentiles of the distribution of each hourly change.
 
 
-### Sea breeze filtering
+### Filtering
 
-These functions convert the sea breeze diagnostics to a binary mask of candidate sea breeze objects, which are then refined by applying several filters of known sea breeze characteristics. Functions can be found in [`sea_breeze_filters`](sea_breeze_filters.py). There are several filters that can be applied in `filter_3d` (see docstring). Output from `filter_3d` is a binary dataset of sea breeze objects. The [`filter.py`](filter.py) script can be used to drive the filtering processing
+These functions convert the diagnostics to a binary mask of candidate objects, which are then refined by applying several filters of known sea breeze or convergence line characteristics. Functions can be found in [`sea_breeze_filters`](sea_breeze_filters.py). There are several filters that can be applied in `filter_3d` (see docstring). Output from `filter_3d` is a binary dataset of sea breeze objects. The [`filter.py`](filter.py) script can be used to drive the filtering processing
 
 For calculating the threshold to mask with, the [`percentile`](sea_breeze_filters.py#L72) function can be used prior to the filtering. That way, the percentile threshold can be taken from a distribution over a longer period (say, several months) than the filtering period (say, a single day).
 
@@ -55,11 +63,22 @@ For calculating the threshold to mask with, the [`percentile`](sea_breeze_filter
 
 ### Local example
 
-An example notebook demonstrating these three steps using ERA5 data is available [here](example_notebooks/era5_sea_breeze_identification.ipynb), with sample ERA5 data provided in the `example_data` directory.
+#### ERA5 sea breezes
+* An example notebook demonstrating these three steps to identify sea breezes using ERA5 data is available [here](example_notebooks/sea_breezes/era5_sea_breeze_identification.ipynb), with sample ERA5 data provided in the `example_data` directory.
 
 ### On the gadi HPC system
 
-An example notebook demonstrating these three steps using [AUS2200](https://dx.doi.org/10.25914/w95d-q328) data is available [here](example_notebooks/aus2200_sea_breeze_identification.ipynb). This example is intended to run on the Australian NCI Gadi supercomputer, with access to the [ACCESS-NRI conda environment on xp65](https://docs.access-hive.org.au/getting_started/environments/) and [AUS2200 on the bs94 project](https://dx.doi.org/10.25914/w95d-q328).
+#### AUS2200 sea breezes
+
+* An example notebook demonstrating these three steps using [AUS2200](https://dx.doi.org/10.25914/w95d-q328) data is available [here](example_notebooks/sea_breezes/aus2200_sea_breeze_identification.ipynb). This example is intended to run on the Australian NCI Gadi supercomputer, with access to the [ACCESS-NRI conda environment on xp65](https://docs.access-hive.org.au/getting_started/environments/) and [AUS2200 on the bs94 project](https://dx.doi.org/10.25914/w95d-q328).
+
+#### BARRA-R sea breezes
+
+* An example applying the kinematic moisture frontogenesis parameter to one month of BARRA-R data is available [here](example_notebooks/sea_breezes/barra_r_sea_breeze_frontogenesis.ipynb). This example is intended to run on the Australian NCI Gadi supercomputer, with access to the [ACCESS-NRI conda environment on xp65](https://docs.access-hive.org.au/getting_started/environments/) and [BARRA on the ob53 project](https://my.nci.org.au/mancini/login?next=/mancini/project/ob53/join).
+
+#### BARRA-C convergence lines
+
+* An example applying the ICON parameter for convergence line detection is [here](example_notebooks/convergence_lines/barra_c_icon.ipynb). This example is intended to run on the Australian NCI Gadi supercomputer, with access to the [ACCESS-NRI conda environment on xp65](https://docs.access-hive.org.au/getting_started/environments/) and [BARRA on the ob53 project](https://my.nci.org.au/mancini/login?next=/mancini/project/ob53/join).
 
 
 ## Requirements
@@ -89,7 +108,9 @@ In addition, for loading ERA5 data hosted on the NCI within the `load_model_data
 If would like to make changes to improve this code, please reach out or make an issue!
 
 ## Citing
-Please consider citing [this paper](https://gmd.copernicus.org/articles/19/933/2026/)
+Please consider citing [the Zenodo record](https://doi.org/10.5281/zenodo.22088332)
+
+You can also cite [out paper on sea breeze identification methods](https://gmd.copernicus.org/articles/19/933/2026/)
 
 ## WxSysLib
 This code was developed with funding from the ARC Centre of Excellence for 21st Century Weather. The code is also available in the Centre's [WxSysLib](https://github.com/21centuryweather/WxSysLib/tree/main/utils/diagnostics/sea_breeze) repository. However, the version provided here should be considered the most up to date.
