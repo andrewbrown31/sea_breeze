@@ -67,7 +67,7 @@ For calculating the threshold to mask with, the [`percentile`](sea_breeze_filter
 ### Local examples
 
 #### ERA5 sea breezes
-* An example notebook demonstrating these three steps (pre-processing, diagnostics, filtering) to identify sea breezes using ERA5 data is available [here](example_notebooks/sea_breezes/era5_sea_breeze_identification.ipynb), with sample ERA5 data provided in the `example_data` directory.
+* An example notebook demonstrating these three steps (pre-processing, diagnostics, filtering) to identify sea breezes using ERA5 data is available [here](example_notebooks/sea_breezes/era5_sea_breeze_identification.ipynb), with sample ERA5 data provided in the `example_data` directory. Note that ERA5 is likely too coarse to realistically represent some sea breezes (see [Brown et al. 2026](https://doi.org/10.5194/gmd-19-933-2026)), but may be able to simulate large and well defined cases)
 
 #### The Weather Change Cookbook
 * An example notebook demonstrating the calculation of coast-relative winds and moisture frontogenesis from a ~4.4 km dataset is available within the [Weather Change Cookbook](https://cookbook.21centuryweather.org.au/coastal-wind-analysis/). Can be run locally or on a binder.
