@@ -10,6 +10,7 @@ Contents:
 * [Examples](#examples)
     * [Local example](#local-example)
        * [ERA5 sea breezes](#era5-sea-breezes)
+       * [The Weather Change Cookbook](#the-weather-change-cookbook)
     * [On the gadi HPC system](#on-the-gadi-hpc-system)
        * [AUS2200 sea breezes](#aus2200-sea-breezes)
        * [BARRA-R sea breezes](#barra-r-sea-breezes)
@@ -53,6 +54,8 @@ For calculating the threshold to mask with, the [`percentile`](sea_breeze_filter
 
 ### Notes
 
+* It is recommended that relatively high resolution (1-10 km) gridded data is used for sea breeze identification. Although, sea breezes may be present in coarser data (see ERA5 example below)
+
 * For km-scale data, large amounts of memory may be required for diagnostic calculation and model pre-processing.
 
 * In practice, diagnostics should be saved to disk, and reloaded for filtering. This is because each is a computationally heavy task, especially for km-scale model data. The zarr format is used for saving output for efficiency.
@@ -61,16 +64,19 @@ For calculating the threshold to mask with, the [`percentile`](sea_breeze_filter
 
 ## Examples
 
-### Local example
+### Local examples
 
 #### ERA5 sea breezes
-* An example notebook demonstrating these three steps to identify sea breezes using ERA5 data is available [here](example_notebooks/sea_breezes/era5_sea_breeze_identification.ipynb), with sample ERA5 data provided in the `example_data` directory.
+* An example notebook demonstrating these three steps (pre-processing, diagnostics, filtering) to identify sea breezes using ERA5 data is available [here](example_notebooks/sea_breezes/era5_sea_breeze_identification.ipynb), with sample ERA5 data provided in the `example_data` directory.
+
+#### The Weather Change Cookbook
+* An example notebook demonstrating the calculation of coast-relative winds and moisture frontogenesis from a ~4.4 km dataset is available within the [Weather Change Cookbook](https://cookbook.21centuryweather.org.au/coastal-wind-analysis/). Can be run locally or on a binder.
 
 ### On the gadi HPC system
 
 #### AUS2200 sea breezes
 
-* An example notebook demonstrating these three steps using [AUS2200](https://dx.doi.org/10.25914/w95d-q328) data is available [here](example_notebooks/sea_breezes/aus2200_sea_breeze_identification.ipynb). This example is intended to run on the Australian NCI Gadi supercomputer, with access to the [ACCESS-NRI conda environment on xp65](https://docs.access-hive.org.au/getting_started/environments/) and [AUS2200 on the bs94 project](https://dx.doi.org/10.25914/w95d-q328).
+* An example notebook demonstrating these three steps (pre-processing, diagnostics, filtering) using [AUS2200](https://dx.doi.org/10.25914/w95d-q328) data is available [here](example_notebooks/sea_breezes/aus2200_sea_breeze_identification.ipynb). This example is intended to run on the Australian NCI Gadi supercomputer, with access to the [ACCESS-NRI conda environment on xp65](https://docs.access-hive.org.au/getting_started/environments/) and [AUS2200 on the bs94 project](https://dx.doi.org/10.25914/w95d-q328).
 
 #### BARRA-R sea breezes
 
